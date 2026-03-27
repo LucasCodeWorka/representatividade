@@ -89,6 +89,23 @@ export default function Home() {
           loading={loading}
         />
 
+        {!loading && !error && metricas && (
+          <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">Limite Classe C:</span>
+              <select
+                value={limiteClasseC}
+                onChange={(e) => setLimiteClasseC(Number(e.target.value))}
+                className="px-3 py-1.5 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+              >
+                <option value={90}>90%</option>
+                <option value={93}>93%</option>
+                <option value={95}>95%</option>
+              </select>
+            </div>
+          </div>
+        )}
+
         {/* Controle deslizante de % Acumulado */}
         {!loading && !error && metricas && (
           <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -200,20 +217,8 @@ export default function Home() {
 
             {/* Legenda Classificação */}
             <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3">
                 <h3 className="font-semibold text-gray-800">Classificacao ABC</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Limite Classe C:</span>
-                  <select
-                    value={limiteClasseC}
-                    onChange={(e) => setLimiteClasseC(Number(e.target.value))}
-                    className="px-3 py-1.5 border border-gray-300 rounded-lg bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
-                  >
-                    <option value={90}>90%</option>
-                    <option value={93}>93%</option>
-                    <option value={95}>95%</option>
-                  </select>
-                </div>
               </div>
               <div className="flex flex-wrap gap-6 text-sm">
                 <div className="flex items-center gap-2">

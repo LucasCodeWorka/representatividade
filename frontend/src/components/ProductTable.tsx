@@ -149,6 +149,7 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+  const pageCount = Math.max(1, totalPages);
 
   // Estatisticas
   const stats = useMemo(() => {
@@ -237,6 +238,33 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
         </div>
       </div>
 
+      {/* Paginacao (Topo) */}
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+        <p className="text-sm text-gray-700">
+          Mostrando <span className="font-medium">{filteredAndSorted.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1}</span> a{' '}
+          <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredAndSorted.length)}</span> de{' '}
+          <span className="font-medium">{filteredAndSorted.length}</span> produtos
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 border rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            Anterior
+          </button>
+          <span className="px-3 py-1 text-sm">
+            Pagina {currentPage} de {pageCount}
+          </span>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
+            disabled={currentPage === pageCount}
+            className="px-3 py-1 border rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            Proxima
+          </button>
+        </div>
+      </div>
       {/* Tabela */}
       <div className="overflow-x-auto">
         <table className="w-full">
@@ -366,11 +394,11 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
             Anterior
           </button>
           <span className="px-3 py-1 text-sm">
-            Página {currentPage} de {totalPages}
+            Página {currentPage} de {pageCount}
           </span>
           <button
-            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(p => Math.min(pageCount, p + 1))}
+            disabled={currentPage === pageCount}
             className="px-3 py-1 border rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
           >
             Próxima
@@ -380,3 +408,4 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
     </div>
   );
 }
+
