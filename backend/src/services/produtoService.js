@@ -4,7 +4,7 @@ const pool = require('../config/database');
 let classificacaoCache = {
   data: null,
   timestamp: null,
-  ttl: 30 * 60 * 1000 // 30 minutos
+  ttl: 4 * 60 * 60 * 1000 // 4 horas (otimizado)
 };
 
 // Cache COMPLETO de representatividade (dados prontos para uso)
@@ -14,7 +14,7 @@ let representatividadeCache = {
   ano: null,
   empresasKey: 'all',
   timestamp: null,
-  ttl: 60 * 60 * 1000,  // 1 hora
+  ttl: 4 * 60 * 60 * 1000,  // 4 horas (otimizado)
   loading: false
 };
 
