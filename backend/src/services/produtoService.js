@@ -82,31 +82,47 @@ const produtoService = {
     console.log('Buscando classificação de produtos (otimizado)...');
     const dataInicio = `${ano}-01-01`;
 
-    // OTIMIZADO: Primeiro busca produtos distintos, depois aplica filtros de classificação
-    // Isso evita chamar as funções pesadas para cada linha de transação
-    const queryProdutosDistintos = `
-      WITH produtos_vendidos AS (
-        SELECT DISTINCT cd_produto
-        FROM vr_tra_transitem
-        WHERE dt_transacao >= $1
-      )
-      SELECT cd_produto
-      FROM produtos_vendidos
-      WHERE f_dic_prd_classificacao(cd_produto, 'DS', 27) = 'EM LINHA'
-        AND f_dic_prd_classificacao(cd_produto, 'DS', 802) <> 'EDICAO LIMITADA'
-    `;
-
     try {
-      console.log('Executando query otimizada...');
-      const result = await pool.query(queryProdutosDistintos, [dataInicio]);
+      console.log('Executando query otimizada com consultas isoladas...');
 
-      const produtosFiltrados = result.rows.map(r => r.cd_produto);
+      // OTIMIZAÇÃO: Separar em 3 consultas pequenas e rápidas
+      const [produtosVendidos, emLinha, edicaoLimitada] = await Promise.all([
+        // 1. Produtos vendidos (SEM função)
+        pool.query(`
+          SELECT DISTINCT cd_produto
+          FROM vr_tra_transitem
+          WHERE dt_transacao >= $1
+        `, [dataInicio]),
+
+        // 2. Classificação "EM LINHA" (função isolada)
+        pool.query(`
+          SELECT cd_produto
+          FROM vr_prd_prdgrade
+          WHERE f_dic_prd_classificacao(cd_produto, 'DS', 27) = 'EM LINHA'
+        `),
+
+        // 3. Classificação "EDICAO LIMITADA" (função isolada)
+        pool.query(`
+          SELECT cd_produto
+          FROM vr_prd_prdgrade
+          WHERE f_dic_prd_classificacao(cd_produto, 'DS', 802) = 'EDICAO LIMITADA'
+        `)
+      ]);
+
+      // JOIN em memória (muito mais rápido)
+      const vendidosSet = new Set(produtosVendidos.rows.map(r => r.cd_produto));
+      const emLinhaSet = new Set(emLinha.rows.map(r => r.cd_produto));
+      const edicaoLimitadaSet = new Set(edicaoLimitada.rows.map(r => r.cd_produto));
+
+      const produtosFiltrados = Array.from(vendidosSet).filter(cd =>
+        emLinhaSet.has(cd) && !edicaoLimitadaSet.has(cd)
+      );
 
       // Atualiza cache
       classificacaoCache = {
         data: produtosFiltrados,
         timestamp: Date.now(),
-        ttl: 30 * 60 * 1000
+        ttl: 4 * 60 * 60 * 1000
       };
 
       console.log(`${produtosFiltrados.length} produtos classificados encontrados`);
@@ -219,31 +235,53 @@ const produtoService = {
       return new Map();
     }
 
-    const query = `
-      SELECT
-        cd_produto,
-        nm_produto AS descricao,
-        ds_cor AS cor,
-        ds_tamanho AS tam,
-        f_dic_prd_nivel(cd_produto, 'CD') AS referencia,
-        f_dic_prd_classificacao(cd_produto, 'DS', 25) AS grupo,
-        CASE WHEN f_dic_prd_classificacao(cd_produto, 'CD', 124) = '007' THEN true ELSE false END AS suspenso
-      FROM vr_prd_prdgrade
-      WHERE cd_produto = ANY($1)
-    `;
-
     try {
-      const result = await pool.query(query, [cdProdutos]);
+      // OTIMIZAÇÃO: Consultas isoladas em paralelo (mais rápido que funções no SELECT)
+      const [detalhesBasicos, referencias, grupos, suspensos] = await Promise.all([
+        // 1. Dados básicos do produto (SEM funções)
+        pool.query(`
+          SELECT cd_produto, nm_produto AS descricao, ds_cor AS cor, ds_tamanho AS tam
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+        `, [cdProdutos]),
 
+        // 2. Referências (função isolada)
+        pool.query(`
+          SELECT cd_produto, f_dic_prd_nivel(cd_produto, 'CD') AS referencia
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+        `, [cdProdutos]),
+
+        // 3. Grupos (função isolada)
+        pool.query(`
+          SELECT cd_produto, f_dic_prd_classificacao(cd_produto, 'DS', 25) AS grupo
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+        `, [cdProdutos]),
+
+        // 4. Suspensos (função isolada)
+        pool.query(`
+          SELECT cd_produto,
+            CASE WHEN f_dic_prd_classificacao(cd_produto, 'CD', 124) = '007' THEN true ELSE false END AS suspenso
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+        `, [cdProdutos])
+      ]);
+
+      // JOIN em memória (rápido)
       const detalhesMap = new Map();
-      result.rows.forEach(row => {
+      const refMap = new Map(referencias.rows.map(r => [r.cd_produto, r.referencia]));
+      const grupoMap = new Map(grupos.rows.map(r => [r.cd_produto, r.grupo]));
+      const suspensoMap = new Map(suspensos.rows.map(r => [r.cd_produto, r.suspenso]));
+
+      detalhesBasicos.rows.forEach(row => {
         detalhesMap.set(row.cd_produto, {
           descricao: row.descricao,
           cor: row.cor,
           tam: row.tam,
-          referencia: row.referencia,
-          grupo: row.grupo,
-          suspenso: row.suspenso
+          referencia: refMap.get(row.cd_produto) || '',
+          grupo: grupoMap.get(row.cd_produto) || '',
+          suspenso: suspensoMap.get(row.cd_produto) || false
         });
       });
 
