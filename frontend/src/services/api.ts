@@ -19,6 +19,7 @@ export interface Produto {
   percent_individual: number;
   percent_acumulado: number;
   classificacao: 'A' | 'B' | 'C';
+  suspenso?: boolean;
 }
 
 export interface SkuReferencia {
@@ -33,6 +34,7 @@ export interface SkuReferencia {
   percent_individual: number;
   percent_acumulado: number;
   classificacao: 'A' | 'B' | 'C';
+  suspenso?: boolean;
 }
 
 export interface ReferenciaMetricas {

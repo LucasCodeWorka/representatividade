@@ -302,7 +302,14 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
                 title={`Clique para ver todos os SKUs da referencia ${produto.referencia}`}
               >
                 <td className={`px-4 py-3 text-sm font-medium ${produto.classificacao === 'C' ? 'text-red-700' : 'text-rose-600'}`}>
-                  {produto.referencia}
+                  <div className="flex items-center gap-2">
+                    <span>{produto.referencia}</span>
+                    {produto.suspenso && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-900 text-white">
+                        SUSPENSO
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">
                   {produto.cd_produto}

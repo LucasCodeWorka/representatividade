@@ -175,7 +175,8 @@ const produtoService = {
         ds_cor AS cor,
         ds_tamanho AS tam,
         f_dic_prd_nivel(cd_produto, 'CD') AS referencia,
-        f_dic_prd_classificacao(cd_produto, 'DS', 25) AS grupo
+        f_dic_prd_classificacao(cd_produto, 'DS', 25) AS grupo,
+        CASE WHEN f_dic_prd_classificacao(cd_produto, 'CD', 124) = '007' THEN true ELSE false END AS suspenso
       FROM vr_prd_prdgrade
       WHERE cd_produto = ANY($1)
     `;
@@ -190,7 +191,8 @@ const produtoService = {
           cor: row.cor,
           tam: row.tam,
           referencia: row.referencia,
-          grupo: row.grupo
+          grupo: row.grupo,
+          suspenso: row.suspenso
         });
       });
 
@@ -266,6 +268,7 @@ const produtoService = {
           tam: detalhe.tam || '-',
           referencia: detalhe.referencia || '-',
           grupo: detalhe.grupo || '-',
+          suspenso: !!detalhe.suspenso,
           qt_liquida: Math.round(venda.qt_liquida),
           vl_total: Math.round(venda.vl_total * 100) / 100,
           percent_individual: Math.round(percentIndividual * 100) / 100,
@@ -415,6 +418,7 @@ const produtoService = {
         p.ds_tamanho AS tam,
         f_dic_prd_nivel(p.cd_produto, 'CD') AS referencia,
         f_dic_prd_classificacao(p.cd_produto, 'DS', 25) AS grupo,
+        CASE WHEN f_dic_prd_classificacao(p.cd_produto, 'CD', 124) = '007' THEN true ELSE false END AS suspenso,
         v.qt_liquida,
         v.vl_total
       FROM vr_prd_prdgrade p
@@ -446,6 +450,7 @@ const produtoService = {
           tam: row.tam,
           referencia: row.referencia,
           grupo: row.grupo,
+          suspenso: !!row.suspenso,
           qt_liquida: Math.round(parseFloat(row.qt_liquida)),
           vl_total: Math.round(parseFloat(row.vl_total || 0) * 100) / 100,
           percent_individual: Math.round(percentIndividual * 100) / 100,

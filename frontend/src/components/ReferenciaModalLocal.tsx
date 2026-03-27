@@ -204,7 +204,14 @@ export default function ReferenciaModalLocal({ referencia, produtos, onClose }: 
                     }`}
                   >
                     <td className={`px-4 py-3 text-sm font-medium ${sku.classificacao === 'C' ? 'text-red-800' : 'text-gray-900'}`}>
-                      {sku.cd_produto}
+                      <div className="flex items-center gap-2">
+                        <span>{sku.cd_produto}</span>
+                        {sku.suspenso && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-900 text-white">
+                            SUSPENSO
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate" title={sku.descricao}>{sku.descricao}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{sku.cor}</td>
@@ -263,7 +270,16 @@ export default function ReferenciaModalLocal({ referencia, produtos, onClose }: 
                     </tr>
                     {bloco.itens.map((sku) => (
                       <tr key={sku.cd_produto} className={`transition-colors ${sku.classificacao === 'C' ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
-                        <td className={`px-4 py-2 text-sm font-medium pl-8 ${sku.classificacao === 'C' ? 'text-red-800' : 'text-gray-900'}`}>{sku.cd_produto}</td>
+                        <td className={`px-4 py-2 text-sm font-medium pl-8 ${sku.classificacao === 'C' ? 'text-red-800' : 'text-gray-900'}`}>
+                          <div className="flex items-center gap-2">
+                            <span>{sku.cd_produto}</span>
+                            {sku.suspenso && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-900 text-white">
+                                SUSPENSO
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-4 py-2 text-sm text-gray-700 max-w-xs truncate" title={sku.descricao}>{sku.descricao}</td>
                         <td className="px-4 py-2 text-sm text-gray-500">{sku.tam}</td>
                         <td className="px-4 py-2 text-sm text-gray-900 text-right">{sku.qt_liquida.toLocaleString('pt-BR')}</td>

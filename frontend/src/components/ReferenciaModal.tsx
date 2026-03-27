@@ -159,7 +159,14 @@ export default function ReferenciaModal({ referencia, ano, onClose }: Referencia
                     }`}
                   >
                     <td className={`px-4 py-3 text-sm font-medium ${sku.classificacao === 'C' ? 'text-red-800' : 'text-gray-900'}`}>
-                      {sku.cd_produto}
+                      <div className="flex items-center gap-2">
+                        <span>{sku.cd_produto}</span>
+                        {sku.suspenso && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-900 text-white">
+                            SUSPENSO
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate" title={sku.descricao}>{sku.descricao}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">{sku.cor}</td>

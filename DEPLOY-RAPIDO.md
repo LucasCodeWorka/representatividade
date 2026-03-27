@@ -2,47 +2,23 @@
 
 Seu repositório: https://github.com/LucasCodeWorka/representatividade.git
 
-## Passos Rápidos (15 minutos)
+## Passos Rápidos (10 minutos)
 
-### 1. Commit e Push dos Arquivos de Configuração
-
-```bash
-cd c:\Users\ce_lu\representatividade-app
-git add .
-git commit -m "Adiciona configuração para deploy no Render"
-git push origin main
-```
-
-### 2. Deploy via Blueprint (Mais Fácil!)
+### 1. Deploy via Blueprint (SUPER FÁCIL!)
 
 1. Acesse: https://dashboard.render.com/
 2. Clique em **"New +"** → **"Blueprint"**
 3. Conecte com GitHub (autorize o Render)
-4. Selecione o repositório: **representatividade**
+4. Selecione o repositório: **LucasCodeWorka/representatividade**
 5. O Render detectará automaticamente o arquivo `render.yaml`
 6. Clique em **"Apply"**
 7. Aguarde! O Render criará:
-   - Banco de dados PostgreSQL
-   - Backend (API)
+   - Backend (API) - já configurado com seu banco de dados existente
    - Frontend (Next.js)
 
-### 3. Inicializar o Banco de Dados
+**OBS**: Você não precisa criar banco de dados, o sistema já está configurado para usar o seu banco existente em `dbexp.vcenter.com.br`
 
-Após a criação do banco:
-
-1. No Dashboard do Render, vá em **"representatividade-db"**
-2. Clique na aba **"Connect"**
-3. Copie o comando **"External Connection"**
-4. Use o PSQL ou DBeaver para conectar
-5. Execute o arquivo `backend/init.sql`
-
-**Ou via PSQL:**
-```bash
-# Substitua pelos dados de conexão do seu banco
-psql postgresql://representatividade_user:SENHA@HOST/representatividade < backend/init.sql
-```
-
-### 4. Atualizar URL do Backend no Frontend
+### 2. Atualizar URL do Backend no Frontend
 
 Após o backend estar rodando:
 
