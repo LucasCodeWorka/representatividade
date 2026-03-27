@@ -14,25 +14,15 @@ services:
       - key: PORT
         value: 3001
       - key: DB_HOST
-        fromDatabase:
-          name: representatividade-db
-          property: host
+        value: dbexp.vcenter.com.br
       - key: DB_PORT
-        fromDatabase:
-          name: representatividade-db
-          property: port
+        value: 20168
       - key: DB_NAME
-        fromDatabase:
-          name: representatividade-db
-          property: database
+        value: liebe
       - key: DB_USER
-        fromDatabase:
-          name: representatividade-db
-          property: user
+        value: liebe_ro
       - key: DB_PASSWORD
-        fromDatabase:
-          name: representatividade-db
-          property: password
+        value: "%eTS$33qPO8XZNMc"
 
   # Frontend Next.js
   - type: web
@@ -46,11 +36,3 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_URL
         value: https://representatividade-backend.onrender.com/api
-
-# Database
-databases:
-  - name: representatividade-db
-    region: oregon
-    plan: free
-    databaseName: representatividade
-    user: representatividade_user
