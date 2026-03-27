@@ -1,0 +1,56 @@
+services:
+  # Backend API
+  - type: web
+    name: representatividade-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DB_HOST
+        fromDatabase:
+          name: representatividade-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: representatividade-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: representatividade-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: representatividade-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: representatividade-db
+          property: password
+
+  # Frontend Next.js
+  - type: web
+    name: representatividade-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://representatividade-backend.onrender.com/api
+
+# Database
+databases:
+  - name: representatividade-db
+    region: oregon
+    plan: free
+    databaseName: representatividade
+    user: representatividade_user
