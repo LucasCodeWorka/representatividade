@@ -12,6 +12,7 @@ interface FilterPanelProps {
   setSelectedEmpresas: (ids: number[]) => void;
   onRefresh: () => void;
   loading: boolean;
+  onEmpresasInitialized?: (initialIds: number[]) => void;
 }
 
 const EMPRESAS_EXCLUIDAS = [
@@ -40,7 +41,8 @@ export default function FilterPanel({
   selectedEmpresas,
   setSelectedEmpresas,
   onRefresh,
-  loading
+  loading,
+  onEmpresasInitialized
 }: FilterPanelProps) {
   const anos = [2024, 2025, 2026];
   const [cacheLoading, setCacheLoading] = useState(false);
@@ -60,9 +62,11 @@ export default function FilterPanel({
           (e) => !exclusoes.has(normalizeText(e.empresa))
         );
         setEmpresas(empresasFiltradas);
-        if (selectedEmpresas.length === 0 && empresasFiltradas.length > 0) {
-          setSelectedEmpresas(empresasFiltradas.map(e => e.idempresa));
+        const initialIds = empresasFiltradas.map(e => e.idempresa);
+        if (selectedEmpresas.length === 0 && initialIds.length > 0) {
+          setSelectedEmpresas(initialIds);
         }
+        onEmpresasInitialized?.(initialIds);
       } catch (error) {
         console.error('Erro ao carregar empresas:', error);
       } finally {
@@ -70,7 +74,7 @@ export default function FilterPanel({
       }
     };
     carregarEmpresas();
-  }, []);
+  }, [onEmpresasInitialized, setSelectedEmpresas]);
 
   const allEmpresaIds = useMemo(() => empresas.map(e => e.idempresa), [empresas]);
   const allSelected = empresas.length > 0 && selectedEmpresas.length === empresas.length;

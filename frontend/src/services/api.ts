@@ -101,6 +101,36 @@ export interface EmpresasResponse {
   empresas: Empresa[];
 }
 
+export type FlagTargetType = 'SKU' | 'COR' | 'REFERENCIA';
+export type WorkflowStage = 'PCP' | 'DIRETORIA';
+export type FlagStatus = 'pendente_diretoria' | 'aprovado' | 'rejeitado';
+
+export interface RetiradaFlag {
+  id: string;
+  targetType: FlagTargetType;
+  stage: WorkflowStage;
+  referencia: string | null;
+  cor: string | null;
+  cd_produto: number | null;
+  status: FlagStatus;
+  reason: string;
+  notes: string;
+  snapshot: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FlagsResponse {
+  success: boolean;
+  total: number;
+  flags: RetiradaFlag[];
+}
+
+export interface FlagResponse {
+  success: boolean;
+  flag: RetiradaFlag;
+}
+
 export const produtosApi = {
   async getRepresentatividade(ano: number = 2026, filtro: boolean = true, empresas: number[] = []): Promise<RepresentatividadeResponse> {
     const response = await api.get<RepresentatividadeResponse>('/produtos/representatividade', {
@@ -137,6 +167,27 @@ export const produtosApi = {
 
   async limparCache(): Promise<void> {
     await api.post('/produtos/cache/limpar');
+  }
+};
+
+export const flagsApi = {
+  async list(): Promise<FlagsResponse> {
+    const response = await api.get<FlagsResponse>('/flags');
+    return response.data;
+  },
+
+  async create(payload: Partial<RetiradaFlag>): Promise<FlagResponse> {
+    const response = await api.post<FlagResponse>('/flags', payload);
+    return response.data;
+  },
+
+  async update(id: string, payload: Partial<RetiradaFlag>): Promise<FlagResponse> {
+    const response = await api.patch<FlagResponse>(`/flags/${id}`, payload);
+    return response.data;
+  },
+
+  async remove(id: string): Promise<void> {
+    await api.delete(`/flags/${id}`);
   }
 };
 

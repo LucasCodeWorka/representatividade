@@ -4,7 +4,9 @@
       "Bash(dir)",
       "Bash(curl:*)",
       "Bash(git add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(dir /s /b \"c:\\\\Users\\\\ce_lu\\\\representatividade-app\")",
+      "Bash(findstr:*)"
     ]
   }
 }

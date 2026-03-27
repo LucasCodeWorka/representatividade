@@ -141,7 +141,7 @@ const produtoService = {
         SUM(i.vl_totalliquido * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS vl_total
       FROM vr_tra_transacao T
       JOIN vr_tra_transitem i ON T.nr_transacao = i.nr_transacao AND T.cd_empresa = i.cd_empresa
-      WHERE ${usarFiltroEmpresas ? 'T.cd_empresa = ANY($2)' : 'T.cd_empresa <> 1'}
+      WHERE ${usarFiltroEmpresas ? 'T.cd_empresa = ANY($2)' : '1=1'}
         AND T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
         AND i.dt_transacao >= $1
         AND i.cd_compvend <> 1
@@ -168,7 +168,7 @@ const produtoService = {
         AND C.cd_cliente <> 110000001
         AND C.cd_representant <> 32098
         AND C.tp_situacao <> 6
-        AND ${usarFiltroEmpresas ? 'C.cd_empresa = ANY($2)' : 'C.cd_empresa = 1'}
+        AND ${usarFiltroEmpresas ? 'C.cd_empresa = ANY($2)' : '1=1'}
         AND C.cd_operacao IN (1,18,52,166,148,98,55,97,30,79,93,137,141,142,156,159,310,598,180,58,69,85,124,182)
         ${usarFiltro ? `AND i.cd_produto = ANY(${produtoParamPedido})` : ''}
       GROUP BY i.cd_produto
@@ -439,8 +439,7 @@ const produtoService = {
           SUM(i.vl_totalliquido * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS vl_total
         FROM vr_tra_transacao T
         JOIN vr_tra_transitem i ON T.nr_transacao = i.nr_transacao AND T.cd_empresa = i.cd_empresa
-        WHERE T.cd_empresa <> 1
-          AND T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
+        WHERE T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
           AND i.dt_transacao >= $2
           AND i.cd_compvend <> 1
           AND T.tp_situacao <> 6
@@ -457,7 +456,6 @@ const produtoService = {
           AND C.cd_cliente <> 110000001
           AND C.cd_representant <> 32098
           AND C.tp_situacao <> 6
-          AND C.cd_empresa = 1
           AND C.cd_operacao IN (1,18,52,166,148,98,55,97,30,79,93,137,141,142,156,159,310,598,180,58,69,85,124,182)
         GROUP BY i.cd_produto
       ),

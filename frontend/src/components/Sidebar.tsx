@@ -1,19 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { MenuSection } from './NavigationContext';
 
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  activeItem: MenuSection;
+  onSelectItem: (item: MenuSection) => void;
 }
 
-export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
-  const [activeItem, setActiveItem] = useState('representatividade');
-
+export default function Sidebar({ collapsed, onToggle, activeItem, onSelectItem }: SidebarProps) {
   const menuItems = [
-    { id: 'representatividade', label: 'Representatividade', icon: 'chart' },
-    { id: 'pareto', label: 'Analise Pareto', icon: 'bar' },
-    { id: 'descontinuacao', label: 'Descontinuacao', icon: 'trash' },
+    { id: 'representatividade', label: 'Analise PCP', icon: 'chart' },
+    { id: 'aprovar-retirada', label: 'Diretoria', icon: 'bar' },
+    { id: 'retirada-final', label: 'Retirada Final', icon: 'trash' },
   ];
 
   const secondaryItems = [
@@ -79,7 +79,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {menuItems.map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveItem(item.id)}
+              onClick={() => onSelectItem(item.id as MenuSection)}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                 activeItem === item.id
                   ? 'bg-rose-600 text-white'
@@ -97,7 +97,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           {secondaryItems.map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveItem(item.id)}
+              onClick={() => onSelectItem(item.id as MenuSection)}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                 activeItem === item.id
                   ? 'bg-rose-600 text-white'

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Sidebar from './Sidebar';
+import { MenuSection, NavigationProvider } from './NavigationContext';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -9,16 +10,21 @@ interface AppLayoutProps {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeSection, setActiveSection] = useState<MenuSection>('representatividade');
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
-      <main className="flex-1 overflow-auto">
-        {children}
-      </main>
-    </div>
+    <NavigationProvider value={{ activeSection, setActiveSection }}>
+      <div className="flex h-screen bg-gray-100">
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          activeItem={activeSection}
+          onSelectItem={setActiveSection}
+        />
+        <main className="flex-1 overflow-auto">
+          {children}
+        </main>
+      </div>
+    </NavigationProvider>
   );
 }

@@ -7,6 +7,10 @@ interface ProductTableProps {
   produtos: Produto[];
   onSelectReferencia: (referencia: string) => void;
   limiteClasseC?: number;
+  analyzedReferences?: Set<string>;
+  diretoriaReferences?: Set<string>;
+  approvedReferences?: Set<string>;
+  onQuickClearReferencia?: (referencia: string) => void | Promise<void>;
 }
 
 type MacroGrupo = 'grupo1' | 'grupo2';
@@ -19,7 +23,15 @@ type ProdutoComMacro = Produto & {
 type SortField = 'referencia' | 'cd_produto' | 'descricao' | 'grupo' | 'qt_liquida' | 'vl_total' | 'percent_individual' | 'percent_acumulado' | 'percent_acumulado_macro';
 type SortOrder = 'asc' | 'desc';
 
-export default function ProductTable({ produtos, onSelectReferencia, limiteClasseC = 95 }: ProductTableProps) {
+export default function ProductTable({
+  produtos,
+  onSelectReferencia,
+  limiteClasseC = 95,
+  analyzedReferences,
+  diretoriaReferences,
+  approvedReferences,
+  onQuickClearReferencia
+}: ProductTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('percent_acumulado');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -332,6 +344,32 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
                 <td className={`px-4 py-3 text-sm font-medium ${produto.classificacao === 'C' ? 'text-red-700' : 'text-rose-600'}`}>
                   <div className="flex items-center gap-2">
                     <span>{produto.referencia}</span>
+                    {approvedReferences?.has(produto.referencia) ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        APROVADO
+                      </span>
+                    ) : diretoriaReferences?.has(produto.referencia) ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                        DIRETORIA
+                      </span>
+                    ) : null}
+                    {analyzedReferences?.has(produto.referencia) && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                        PCP
+                      </span>
+                    )}
+                    {onQuickClearReferencia && analyzedReferences?.has(produto.referencia) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onQuickClearReferencia(produto.referencia);
+                        }}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        title={`Desfazer marcacoes PCP da referencia ${produto.referencia}`}
+                      >
+                        Desfazer
+                      </button>
+                    )}
                     {produto.suspenso && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-900 text-white">
                         SUSPENSO
@@ -369,9 +407,7 @@ export default function ProductTable({ produtos, onSelectReferencia, limiteClass
                 <td className="px-4 py-3 text-sm text-gray-900 text-right">
                   {filterMacroGrupo === 'all' ? '-' : `${produto.percent_acumulado_macro.toFixed(2)}%`}
                 </td>
-                <td className="px-4 py-3 text-center">
-                  {getClassBadge(produto.classificacao)}
-                </td>
+                <td className="px-4 py-3 text-center">{getClassBadge(produto.classificacao)}</td>
               </tr>
             ))}
           </tbody>
