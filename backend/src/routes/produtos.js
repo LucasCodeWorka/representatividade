@@ -8,10 +8,13 @@ router.get('/representatividade', async (req, res) => {
   try {
     const ano = parseInt(req.query.ano) || 2026;
     const aplicarFiltro = req.query.filtro !== 'false';
+    const empresas = typeof req.query.empresas === 'string' && req.query.empresas.trim() !== ''
+      ? req.query.empresas.split(',').map(e => parseInt(e, 10)).filter(Number.isInteger)
+      : [];
 
-    console.log(`Buscando representatividade para ${ano} (filtro: ${aplicarFiltro})`);
+    console.log(`Buscando representatividade para ${ano} (filtro: ${aplicarFiltro}, empresas: ${empresas.length > 0 ? empresas.join(',') : 'all'})`);
 
-    const resultado = await produtoService.getRepresentatividade(ano, aplicarFiltro);
+    const resultado = await produtoService.getRepresentatividade(ano, aplicarFiltro, empresas);
 
     res.json({
       success: true,
@@ -23,6 +26,22 @@ router.get('/representatividade', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Erro ao buscar representatividade',
+      message: error.message
+    });
+  }
+});
+
+// GET /api/produtos/empresas
+// Lista empresas disponiveis para filtro
+router.get('/empresas', async (req, res) => {
+  try {
+    const empresas = await produtoService.getEmpresas();
+    res.json({ success: true, total: empresas.length, empresas });
+  } catch (error) {
+    console.error('Erro no endpoint empresas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao buscar empresas',
       message: error.message
     });
   }

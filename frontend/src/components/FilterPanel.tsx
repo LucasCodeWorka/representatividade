@@ -1,22 +1,44 @@
 'use client';
 
-import { useState } from 'react';
-import { produtosApi, CacheStatus } from '@/services/api';
+import { useEffect, useMemo, useState } from 'react';
+import { produtosApi, CacheStatus, Empresa } from '@/services/api';
 
 interface FilterPanelProps {
   ano: number;
   setAno: (ano: number) => void;
   aplicarFiltro: boolean;
   setAplicarFiltro: (value: boolean) => void;
+  selectedEmpresas: number[];
+  setSelectedEmpresas: (ids: number[]) => void;
   onRefresh: () => void;
   loading: boolean;
 }
+
+const EMPRESAS_EXCLUIDAS = [
+  'LIEBE ECOMMERCE ANGELICA',
+  'LIEBE BH SHOPPING - MG',
+  'CB EMPREENDIMENTOS',
+  'CAIRO BENEVIDES',
+  'LIEBE VILA OLIMPIA',
+  'LIEBE SHOPPING IBIRAPUERA - SP',
+  'LIEBE ANALIA FRANCO - SP',
+  'LIEBE BOURBON SP'
+];
+
+const normalizeText = (value: string) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 export default function FilterPanel({
   ano,
   setAno,
   aplicarFiltro,
   setAplicarFiltro,
+  selectedEmpresas,
+  setSelectedEmpresas,
   onRefresh,
   loading
 }: FilterPanelProps) {
@@ -24,6 +46,46 @@ export default function FilterPanel({
   const [cacheLoading, setCacheLoading] = useState(false);
   const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
   const [showCacheInfo, setShowCacheInfo] = useState(false);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [empresasLoading, setEmpresasLoading] = useState(false);
+  const [showEmpresas, setShowEmpresas] = useState(true);
+
+  useEffect(() => {
+    const carregarEmpresas = async () => {
+      setEmpresasLoading(true);
+      try {
+        const response = await produtosApi.getEmpresas();
+        const exclusoes = new Set(EMPRESAS_EXCLUIDAS.map(normalizeText));
+        const empresasFiltradas = response.empresas.filter(
+          (e) => !exclusoes.has(normalizeText(e.empresa))
+        );
+        setEmpresas(empresasFiltradas);
+        if (selectedEmpresas.length === 0 && empresasFiltradas.length > 0) {
+          setSelectedEmpresas(empresasFiltradas.map(e => e.idempresa));
+        }
+      } catch (error) {
+        console.error('Erro ao carregar empresas:', error);
+      } finally {
+        setEmpresasLoading(false);
+      }
+    };
+    carregarEmpresas();
+  }, []);
+
+  const allEmpresaIds = useMemo(() => empresas.map(e => e.idempresa), [empresas]);
+  const allSelected = empresas.length > 0 && selectedEmpresas.length === empresas.length;
+
+  const toggleAllEmpresas = (checked: boolean) => {
+    setSelectedEmpresas(checked ? allEmpresaIds : []);
+  };
+
+  const toggleEmpresa = (idempresa: number) => {
+    if (selectedEmpresas.includes(idempresa)) {
+      setSelectedEmpresas(selectedEmpresas.filter(id => id !== idempresa));
+      return;
+    }
+    setSelectedEmpresas([...selectedEmpresas, idempresa]);
+  };
 
   const handleCarregarCache = async () => {
     setCacheLoading(true);
@@ -154,6 +216,55 @@ export default function FilterPanel({
             )}
           </button>
         </div>
+      </div>
+
+      {/* Empresas */}
+      <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-gray-700">Empresas</span>
+          <div className="flex items-center gap-3">
+            {empresasLoading && <span className="text-xs text-gray-500">Carregando...</span>}
+            <button
+              type="button"
+              onClick={() => setShowEmpresas(v => !v)}
+              className="text-xs px-2 py-1 border border-gray-300 rounded bg-white hover:bg-gray-100 text-gray-700"
+            >
+              {showEmpresas ? 'Recolher' : 'Expandir'}
+            </button>
+          </div>
+        </div>
+        {showEmpresas && (
+          <>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                id="empresas-all"
+                checked={allSelected}
+                onChange={(e) => toggleAllEmpresas(e.target.checked)}
+                className="h-4 w-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+              />
+              <label htmlFor="empresas-all" className="text-sm text-gray-700 font-medium">
+                Selecionar todas
+              </label>
+              <span className="text-xs text-gray-500 ml-2">
+                ({selectedEmpresas.length} de {empresas.length} selecionadas)
+              </span>
+            </div>
+            <div className="max-h-32 overflow-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {empresas.map((empresa) => (
+                <label key={empresa.idempresa} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={selectedEmpresas.includes(empresa.idempresa)}
+                    onChange={() => toggleEmpresa(empresa.idempresa)}
+                    className="h-4 w-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500"
+                  />
+                  <span>{empresa.empresa} ({empresa.idempresa})</span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Info do Cache */}

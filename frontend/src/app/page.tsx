@@ -14,6 +14,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [ano, setAno] = useState(2026);
   const [aplicarFiltro, setAplicarFiltro] = useState(true);
+  const [selectedEmpresas, setSelectedEmpresas] = useState<number[]>([]);
   const [percentAcumuladoMax, setPercentAcumuladoMax] = useState(100);
   const [selectedReferencia, setSelectedReferencia] = useState<string | null>(null);
   const [limiteClasseC, setLimiteClasseC] = useState(93); // Limite para classe C (90%, 93% ou 95%)
@@ -23,7 +24,7 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await produtosApi.getRepresentatividade(ano, aplicarFiltro);
+      const response = await produtosApi.getRepresentatividade(ano, aplicarFiltro, selectedEmpresas);
       setProdutos(response.produtos);
       setMetricas(response.metricas);
     } catch (err: any) {
@@ -32,7 +33,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [ano, aplicarFiltro]);
+  }, [ano, aplicarFiltro, selectedEmpresas]);
 
   useEffect(() => {
     carregarDados();
@@ -64,6 +65,23 @@ export default function Home() {
     };
   }, [metricas, produtosFiltrados, produtosComClassificacao]);
 
+  const impactoCortes = useMemo(() => {
+    const totalValor = produtos.reduce((sum, p) => sum + p.vl_total, 0);
+    const calcular = (limite: number) => {
+      const skusCorte = produtos.filter(p => p.percent_acumulado > limite);
+      const valorPerdido = skusCorte.reduce((sum, p) => sum + p.vl_total, 0);
+      const percentualPerdido = totalValor > 0 ? (valorPerdido / totalValor) * 100 : 0;
+      return {
+        limite,
+        skus: skusCorte.length,
+        valorPerdido,
+        percentualPerdido
+      };
+    };
+
+    return [calcular(90), calcular(93), calcular(95)];
+  }, [produtos]);
+
   return (
     <main className="min-h-screen p-6 bg-gray-50">
       <div className="space-y-6">
@@ -85,6 +103,8 @@ export default function Home() {
           setAno={setAno}
           aplicarFiltro={aplicarFiltro}
           setAplicarFiltro={setAplicarFiltro}
+          selectedEmpresas={selectedEmpresas}
+          setSelectedEmpresas={setSelectedEmpresas}
           onRefresh={carregarDados}
           loading={loading}
         />
@@ -198,6 +218,23 @@ export default function Home() {
                 color="red"
                 icon="warning"
               />
+            </div>
+
+            {/* Impacto financeiro por corte de Classe C */}
+            <div>
+              <h2 className="text-lg font-semibold mb-3">Perda Potencial por Corte Classe C</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {impactoCortes.map((corte) => (
+                  <MetricCard
+                    key={corte.limite}
+                    title={`Corte ${corte.limite}%`}
+                    value={`R$ ${corte.valorPerdido.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    subtitle={`${corte.percentualPerdido.toFixed(2)}% do faturamento | ${corte.skus} SKUs`}
+                    color="red"
+                    icon="money"
+                  />
+                ))}
+              </div>
             </div>
 
             {/* Tabela de SKUs */}

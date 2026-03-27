@@ -71,6 +71,7 @@ export interface CacheStatus {
   carregado: boolean;
   loading: boolean;
   ano: number | null;
+  empresas?: string;
   comFiltro: number;
   semFiltro: number;
   timestamp: string | null;
@@ -87,11 +88,33 @@ export interface CacheCarregarResponse {
   timestamp: string;
 }
 
+export interface Empresa {
+  idempresa: number;
+  empresa: string;
+  suplojas: string;
+  area: string;
+}
+
+export interface EmpresasResponse {
+  success: boolean;
+  total: number;
+  empresas: Empresa[];
+}
+
 export const produtosApi = {
-  async getRepresentatividade(ano: number = 2026, filtro: boolean = true): Promise<RepresentatividadeResponse> {
+  async getRepresentatividade(ano: number = 2026, filtro: boolean = true, empresas: number[] = []): Promise<RepresentatividadeResponse> {
     const response = await api.get<RepresentatividadeResponse>('/produtos/representatividade', {
-      params: { ano, filtro }
+      params: {
+        ano,
+        filtro,
+        empresas: empresas.length > 0 ? empresas.join(',') : undefined
+      }
     });
+    return response.data;
+  },
+
+  async getEmpresas(): Promise<EmpresasResponse> {
+    const response = await api.get<EmpresasResponse>('/produtos/empresas');
     return response.data;
   },
 

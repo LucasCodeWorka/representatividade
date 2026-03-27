@@ -12,6 +12,7 @@ let representatividadeCache = {
   comFiltro: null,      // dados com filtro EM LINHA
   semFiltro: null,      // dados sem filtro
   ano: null,
+  empresasKey: 'all',
   timestamp: null,
   ttl: 60 * 60 * 1000,  // 1 hora
   loading: false
@@ -22,6 +23,49 @@ let referenciasCache = new Map(); // Map<referencia, { data, timestamp }>
 const REFERENCIA_TTL = 60 * 60 * 1000; // 1 hora
 
 const produtoService = {
+  normalizeEmpresaIds(empresas = []) {
+    if (!Array.isArray(empresas)) return [];
+    const ids = empresas
+      .map(e => parseInt(e, 10))
+      .filter(e => Number.isInteger(e) && e > 0);
+    return Array.from(new Set(ids)).sort((a, b) => a - b);
+  },
+
+  /**
+   * Lista empresas disponiveis para filtro
+   */
+  async getEmpresas() {
+    const query = `
+      SELECT
+        e.cd_empresa AS idempresa,
+        e.nm_grupoempresa AS empresa,
+        f_dic_pes_classificacao2(e.cd_pessoa, 'DS', 1000) AS suplojas,
+        f_dic_pes_classificacao2(e.cd_pessoa, 'DS', 400) AS area,
+        "END".cd_cep,
+        e.cd_pessoa,
+        "END".nm_logradouro AS rua,
+        "END".nr_logradouro AS numero,
+        "END".ds_bairro AS bairro,
+        "END".nm_municipio AS cidade,
+        "END".ds_siglaest AS estado,
+        "END".ds_siglalograd
+      FROM vr_ger_empresa e
+      JOIN vr_pes_endereco "END" ON e.cd_pessoa = "END".cd_pessoa
+      WHERE (
+        (e.cd_empresa < 50 AND "END".cd_tipoendereco = 1)
+        OR e.cd_empresa = ANY (ARRAY[100::bigint,110::bigint,120::bigint])
+      )
+      ORDER BY e.nm_grupoempresa
+    `;
+
+    const result = await pool.query(query);
+    return result.rows.map(row => ({
+      idempresa: Number(row.idempresa),
+      empresa: row.empresa,
+      suplojas: row.suplojas || '-',
+      area: row.area || '-'
+    }));
+  },
   /**
    * Busca produtos EM LINHA (status) e que NÃO são EDICAO LIMITADA (continuidade)
    * Executa as funções pesadas f_dic_prd_classificacao separadamente
@@ -76,14 +120,20 @@ const produtoService = {
   /**
    * Busca vendas agregadas por produto
    */
-  async getVendasPorProduto(ano = 2026, produtosFiltrados = null) {
+  async getVendasPorProduto(ano = 2026, produtosFiltrados = null, empresas = []) {
     const dataInicio = `${ano}-01-01`;
+    const empresasSelecionadas = this.normalizeEmpresaIds(empresas);
+    const usarFiltroEmpresas = empresasSelecionadas.length > 0;
 
-    // Se não temos produtos filtrados, busca todos
+    // Se nao temos produtos filtrados, busca todos
     const usarFiltro = produtosFiltrados && produtosFiltrados.length > 0;
 
-    // Query de vendas de transações (empresas diferentes de 1)
-    // Usa vl_totalliquido do item (valor total já calculado)
+    const transParams = [dataInicio];
+    if (usarFiltroEmpresas) transParams.push(empresasSelecionadas);
+    const produtoParamTrans = usarFiltro ? `$${transParams.length + 1}` : null;
+    if (usarFiltro) transParams.push(produtosFiltrados);
+
+    // Query de vendas de transacoes
     let queryTransacoes = `
       SELECT
         i.cd_produto,
@@ -91,18 +141,22 @@ const produtoService = {
         SUM(i.vl_totalliquido * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS vl_total
       FROM vr_tra_transacao T
       JOIN vr_tra_transitem i ON T.nr_transacao = i.nr_transacao AND T.cd_empresa = i.cd_empresa
-      WHERE T.cd_empresa <> 1
+      WHERE ${usarFiltroEmpresas ? 'T.cd_empresa = ANY($2)' : 'T.cd_empresa <> 1'}
         AND T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
         AND i.dt_transacao >= $1
         AND i.cd_compvend <> 1
         AND T.tp_situacao <> 6
         AND T.tp_modalidade IN ('3','4')
-        ${usarFiltro ? 'AND i.cd_produto = ANY($2)' : ''}
+        ${usarFiltro ? `AND i.cd_produto = ANY(${produtoParamTrans})` : ''}
       GROUP BY i.cd_produto
     `;
 
-    // Query de vendas de pedidos (empresa 1)
-    // Usa vl_solicitado do item de pedido
+    const pedidoParams = [dataInicio];
+    if (usarFiltroEmpresas) pedidoParams.push(empresasSelecionadas);
+    const produtoParamPedido = usarFiltro ? `$${pedidoParams.length + 1}` : null;
+    if (usarFiltro) pedidoParams.push(produtosFiltrados);
+
+    // Query de vendas de pedidos
     let queryPedidos = `
       SELECT
         i.cd_produto,
@@ -114,18 +168,16 @@ const produtoService = {
         AND C.cd_cliente <> 110000001
         AND C.cd_representant <> 32098
         AND C.tp_situacao <> 6
-        AND C.cd_empresa = 1
+        AND ${usarFiltroEmpresas ? 'C.cd_empresa = ANY($2)' : 'C.cd_empresa = 1'}
         AND C.cd_operacao IN (1,18,52,166,148,98,55,97,30,79,93,137,141,142,156,159,310,598,180,58,69,85,124,182)
-        ${usarFiltro ? 'AND i.cd_produto = ANY($2)' : ''}
+        ${usarFiltro ? `AND i.cd_produto = ANY(${produtoParamPedido})` : ''}
       GROUP BY i.cd_produto
     `;
 
     try {
-      const params = usarFiltro ? [dataInicio, produtosFiltrados] : [dataInicio];
-
       const [resultTransacoes, resultPedidos] = await Promise.all([
-        pool.query(queryTransacoes, params),
-        pool.query(queryPedidos, params)
+        pool.query(queryTransacoes, transParams),
+        pool.query(queryPedidos, pedidoParams)
       ]);
 
       // Agregar resultados
@@ -159,7 +211,6 @@ const produtoService = {
       throw error;
     }
   },
-
   /**
    * Busca detalhes dos produtos (descrição, cor, tamanho)
    */
@@ -206,12 +257,15 @@ const produtoService = {
   /**
    * Calcula representatividade (análise Pareto) - COM CACHE
    */
-  async getRepresentatividade(ano = 2026, aplicarFiltroClassificacao = true) {
+  async getRepresentatividade(ano = 2026, aplicarFiltroClassificacao = true, empresas = []) {
     const cacheKey = aplicarFiltroClassificacao ? 'comFiltro' : 'semFiltro';
+    const empresasSelecionadas = this.normalizeEmpresaIds(empresas);
+    const empresasKey = empresasSelecionadas.length > 0 ? empresasSelecionadas.join(',') : 'all';
 
     // Verifica cache
     if (representatividadeCache[cacheKey] &&
         representatividadeCache.ano === ano &&
+        representatividadeCache.empresasKey === empresasKey &&
         representatividadeCache.timestamp &&
         (Date.now() - representatividadeCache.timestamp) < representatividadeCache.ttl) {
       console.log(`[CACHE HIT] Retornando representatividade do cache (${cacheKey})`);
@@ -228,7 +282,7 @@ const produtoService = {
       }
 
       // Passo 2: Buscar vendas
-      const vendas = await this.getVendasPorProduto(ano, produtosFiltrados);
+      const vendas = await this.getVendasPorProduto(ano, produtosFiltrados, empresasSelecionadas);
 
       if (vendas.length === 0) {
         return { produtos: [], metricas: { totalSkus: 0, skus80Percent: 0, totalVendido: 0 } };
@@ -291,6 +345,7 @@ const produtoService = {
       // Salva no cache
       representatividadeCache[cacheKey] = resultado;
       representatividadeCache.ano = ano;
+      representatividadeCache.empresasKey = empresasKey;
       representatividadeCache.timestamp = Date.now();
       console.log(`[CACHE] Representatividade salva no cache (${cacheKey})`);
 
@@ -346,6 +401,7 @@ const produtoService = {
       carregado: !!(representatividadeCache.comFiltro || representatividadeCache.semFiltro),
       loading: representatividadeCache.loading,
       ano: representatividadeCache.ano,
+      empresas: representatividadeCache.empresasKey,
       comFiltro: representatividadeCache.comFiltro?.produtos?.length || 0,
       semFiltro: representatividadeCache.semFiltro?.produtos?.length || 0,
       timestamp: representatividadeCache.timestamp
@@ -491,6 +547,7 @@ const produtoService = {
       comFiltro: null,
       semFiltro: null,
       ano: null,
+      empresasKey: 'all',
       timestamp: null,
       ttl: 60 * 60 * 1000,
       loading: false
@@ -501,3 +558,4 @@ const produtoService = {
 };
 
 module.exports = produtoService;
+
