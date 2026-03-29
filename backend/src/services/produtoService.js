@@ -1,4 +1,8 @@
 const pool = require('../config/database');
+const fs = require('fs');
+const path = require('path');
+
+const CACHE_FILE = path.join(__dirname, '../../data/representatividade_cache.json');
 
 // Cache para armazenar produtos classificados (evita chamadas repetidas às funções pesadas)
 let classificacaoCache = {
@@ -17,6 +21,41 @@ let representatividadeCache = {
   ttl: 4 * 60 * 60 * 1000,  // 4 horas (otimizado)
   loading: false
 };
+
+function salvarCacheEmArquivo() {
+  try {
+    const dados = {
+      comFiltro: representatividadeCache.comFiltro,
+      semFiltro: representatividadeCache.semFiltro,
+      ano: representatividadeCache.ano,
+      empresasKey: representatividadeCache.empresasKey,
+      timestamp: representatividadeCache.timestamp
+    };
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(dados), 'utf8');
+    console.log('[CACHE] Salvo em arquivo.');
+  } catch (err) {
+    console.warn('[CACHE] Não foi possível salvar em arquivo:', err.message);
+  }
+}
+
+function carregarCacheDoArquivo() {
+  try {
+    if (!fs.existsSync(CACHE_FILE)) return;
+    const dados = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (!dados.timestamp) return;
+    representatividadeCache.comFiltro = dados.comFiltro || null;
+    representatividadeCache.semFiltro = dados.semFiltro || null;
+    representatividadeCache.ano = dados.ano || null;
+    representatividadeCache.empresasKey = dados.empresasKey || 'all';
+    representatividadeCache.timestamp = dados.timestamp || null;
+    console.log(`[CACHE] Carregado do arquivo (salvo em ${new Date(dados.timestamp).toLocaleString('pt-BR')})`);
+  } catch (err) {
+    console.warn('[CACHE] Não foi possível carregar do arquivo:', err.message);
+  }
+}
+
+// Carrega cache persistido ao iniciar
+carregarCacheDoArquivo();
 
 // Cache de referências já consultadas
 let referenciasCache = new Map(); // Map<referencia, { data, timestamp }>
@@ -149,7 +188,7 @@ const produtoService = {
     const produtoParamTrans = usarFiltro ? `$${transParams.length + 1}` : null;
     if (usarFiltro) transParams.push(produtosFiltrados);
 
-    // Query de vendas de transacoes
+    // Query de vendas de transacoes — empresa 1 usa pedidos, não transações
     let queryTransacoes = `
       SELECT
         i.cd_produto,
@@ -157,7 +196,8 @@ const produtoService = {
         SUM(i.vl_totalliquido * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS vl_total
       FROM vr_tra_transacao T
       JOIN vr_tra_transitem i ON T.nr_transacao = i.nr_transacao AND T.cd_empresa = i.cd_empresa
-      WHERE ${usarFiltroEmpresas ? 'T.cd_empresa = ANY($2)' : '1=1'}
+      WHERE T.cd_empresa <> 1
+        AND ${usarFiltroEmpresas ? 'T.cd_empresa = ANY($2)' : '1=1'}
         AND T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
         AND i.dt_transacao >= $1
         AND i.cd_compvend <> 1
@@ -172,7 +212,8 @@ const produtoService = {
     const produtoParamPedido = usarFiltro ? `$${pedidoParams.length + 1}` : null;
     if (usarFiltro) pedidoParams.push(produtosFiltrados);
 
-    // Query de vendas de pedidos
+    // Query de vendas de pedidos — apenas empresa 1 (não entra em transações)
+    // Se houver filtro de empresas, só inclui pedidos se empresa 1 estiver selecionada
     let queryPedidos = `
       SELECT
         i.cd_produto,
@@ -184,7 +225,8 @@ const produtoService = {
         AND C.cd_cliente <> 110000001
         AND C.cd_representant <> 32098
         AND C.tp_situacao <> 6
-        AND ${usarFiltroEmpresas ? 'C.cd_empresa = ANY($2)' : '1=1'}
+        AND C.cd_empresa = 1
+        AND ${usarFiltroEmpresas ? '1 = ANY($2)' : '1=1'}
         AND C.cd_operacao IN (1,18,52,166,148,98,55,97,30,79,93,137,141,142,156,159,310,598,180,58,69,85,124,182)
         ${usarFiltro ? `AND i.cd_produto = ANY(${produtoParamPedido})` : ''}
       GROUP BY i.cd_produto
@@ -386,6 +428,7 @@ const produtoService = {
       representatividadeCache.empresasKey = empresasKey;
       representatividadeCache.timestamp = Date.now();
       console.log(`[CACHE] Representatividade salva no cache (${cacheKey})`);
+      salvarCacheEmArquivo();
 
       return resultado;
     } catch (error) {
@@ -477,13 +520,15 @@ const produtoService = {
           SUM(i.vl_totalliquido * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS vl_total
         FROM vr_tra_transacao T
         JOIN vr_tra_transitem i ON T.nr_transacao = i.nr_transacao AND T.cd_empresa = i.cd_empresa
-        WHERE T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
+        WHERE T.cd_empresa <> 1
+          AND T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
           AND i.dt_transacao >= $2
           AND i.cd_compvend <> 1
           AND T.tp_situacao <> 6
           AND T.tp_modalidade IN ('3','4')
         GROUP BY i.cd_produto
         UNION ALL
+        -- Apenas empresa 1: não entra em transações, usa pedidos
         SELECT
           i.cd_produto,
           SUM(i.qt_solicitada) AS qt_liquida,
@@ -494,6 +539,7 @@ const produtoService = {
           AND C.cd_cliente <> 110000001
           AND C.cd_representant <> 32098
           AND C.tp_situacao <> 6
+          AND C.cd_empresa = 1
           AND C.cd_operacao IN (1,18,52,166,148,98,55,97,30,79,93,137,141,142,156,159,310,598,180,58,69,85,124,182)
         GROUP BY i.cd_produto
       ),
@@ -589,6 +635,7 @@ const produtoService = {
       loading: false
     };
     referenciasCache.clear();
+    try { fs.unlinkSync(CACHE_FILE); } catch (_) {}
     console.log('[CACHE] Todos os caches foram limpos');
   }
 };

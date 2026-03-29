@@ -65,12 +65,18 @@ const flagsService = {
 
   async ensureTable() {
     if (this.tableReady) return;
-    await pool.query(CREATE_TABLE_SQL);
-    this.tableReady = true;
+    try {
+      await pool.query(CREATE_TABLE_SQL);
+      this.tableReady = true;
+    } catch (err) {
+      console.warn('[FLAGS] Tabela não disponível (banco read-only?), usando modo sem persistência:', err.message);
+      this.tableReady = false;
+    }
   },
 
   async listFlags() {
     await this.ensureTable();
+    if (!this.tableReady) return [];
     const result = await pool.query(`
       SELECT
         id,
@@ -93,6 +99,7 @@ const flagsService = {
 
   async createFlag(payload) {
     await this.ensureTable();
+    if (!this.tableReady) throw new Error('Banco de flags não disponível');
     const target = normalizeTarget(payload);
 
     const existing = await pool.query(
@@ -203,6 +210,7 @@ const flagsService = {
 
   async updateFlag(id, payload) {
     await this.ensureTable();
+    if (!this.tableReady) throw new Error('Banco de flags não disponível');
     const result = await pool.query(
       `
         UPDATE retirada_flags
@@ -245,6 +253,7 @@ const flagsService = {
 
   async deleteFlag(id) {
     await this.ensureTable();
+    if (!this.tableReady) throw new Error('Banco de flags não disponível');
     const result = await pool.query('DELETE FROM retirada_flags WHERE id = $1', [Number(id)]);
     if (result.rowCount === 0) {
       throw new Error('Flag nao encontrada');
