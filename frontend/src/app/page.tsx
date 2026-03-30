@@ -66,6 +66,8 @@ export default function Home() {
   const [showApprovedInDiretoria, setShowApprovedInDiretoria] = useState(false);
   const [clearingDiretoria, setClearingDiretoria] = useState(false);
   const [approvingAllDiretoria, setApprovingAllDiretoria] = useState(false);
+  const [pcpVisibleSkuCount, setPcpVisibleSkuCount] = useState(0);
+  const [diretoriaVisibleSkuCount, setDiretoriaVisibleSkuCount] = useState(0);
   const [empresasReady, setEmpresasReady] = useState(false);
   const latestRequestId = useRef(0);
 
@@ -236,6 +238,18 @@ export default function Home() {
     [pcpFlags]
   );
 
+  const isProdutoPcpMarked = useCallback((produto: Produto) => {
+    const referencia = String(produto.referencia || '');
+    const cor = String(produto.cor || '');
+    const sku = Number(produto.cd_produto);
+
+    if (pcpReferenceKeys.has(referencia)) return true;
+    if (pcpColorKeys.has(`${referencia}|${cor}`)) return true;
+    if (pcpSkuKeys.has(`${referencia}|${sku}`)) return true;
+
+    return false;
+  }, [pcpColorKeys, pcpReferenceKeys, pcpSkuKeys]);
+
   const diretoriaFlags = useMemo(
     () => activeFlags.filter((flag) => flag.stage === 'DIRETORIA'),
     [activeFlags]
@@ -339,8 +353,8 @@ export default function Home() {
       return base;
     }
 
-    return base.filter((produto) => pcpAnalyzedReferences.has(produto.referencia));
-  }, [pcpAnalyzedReferences, produtosFiltrados, showOnlyPcpSavedInPcp]);
+    return base.filter((produto) => isProdutoPcpMarked(produto));
+  }, [isProdutoPcpMarked, produtosFiltrados, showOnlyPcpSavedInPcp]);
 
   const produtosDiretoriaFiltrados = useMemo(() => {
     // Diretoria precisa enxergar tudo que o PCP marcou, mesmo fora do corte Classe C.
@@ -353,11 +367,11 @@ export default function Home() {
     }
 
     if (showOnlyPcpReviewed) {
-      base = base.filter((produto) => pcpAnalyzedReferences.has(produto.referencia));
+      base = base.filter((produto) => isProdutoPcpMarked(produto));
     }
 
     return base;
-  }, [approvedReferences, limiteClasseC, pcpAnalyzedReferences, produtosComClassificacao, showApprovedInDiretoria, showOnlyPcpReviewed]);
+  }, [approvedReferences, isProdutoPcpMarked, limiteClasseC, pcpAnalyzedReferences, produtosComClassificacao, showApprovedInDiretoria, showOnlyPcpReviewed]);
 
   const buildReferenciaSnapshot = useCallback((referenciaProdutos: Produto[]) => {
     const grupo = referenciaProdutos[0]?.grupo || '-';
@@ -773,18 +787,6 @@ export default function Home() {
     return null;
   }, [findExactFlag]);
 
-  const isProdutoPcpMarked = useCallback((produto: Produto) => {
-    const referencia = String(produto.referencia || '');
-    const cor = String(produto.cor || '');
-    const sku = Number(produto.cd_produto);
-
-    if (pcpReferenceKeys.has(referencia)) return true;
-    if (pcpColorKeys.has(`${referencia}|${cor}`)) return true;
-    if (pcpSkuKeys.has(`${referencia}|${sku}`)) return true;
-
-    return false;
-  }, [pcpColorKeys, pcpReferenceKeys, pcpSkuKeys]);
-
   const renderCommonFilters = () => (
     <>
       <FilterPanel
@@ -891,15 +893,15 @@ export default function Home() {
       {renderCommonFilters()}
 
       <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex items-center justify-between gap-4">
-        <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
-          <input
-            type="checkbox"
-            checked={showOnlyPcpSavedInPcp}
-            onChange={(e) => setShowOnlyPcpSavedInPcp(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
-          />
-          Filtrar so PCP
-        </label>
+          <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={showOnlyPcpSavedInPcp}
+              onChange={(e) => setShowOnlyPcpSavedInPcp(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+            />
+            Ver somente SKUs marcados pelo PCP
+          </label>
         <button
           onClick={clearAllPcpFlags}
           disabled={pcpFlags.length === 0 || clearingPcp}
@@ -938,7 +940,7 @@ export default function Home() {
       {!loading && !error && metricas && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <MetricCard title="Total de SKUs" value={metricas.totalSkus.toLocaleString('pt-BR')} subtitle="Produtos ativos" color="blue" icon="box" />
+            <MetricCard title="SKUs no corte" value={pcpVisibleSkuCount.toLocaleString('pt-BR')} subtitle="Apos filtros da tabela" color="blue" icon="box" />
             <MetricCard title="SKUs (80% valor)" value={metricas.skus80Percent.toLocaleString('pt-BR')} subtitle="Concentracao principal" color="green" icon="chart" />
             <MetricCard title="Total Qtd" value={metricas.totalVendido.toLocaleString('pt-BR')} subtitle="Unidades" color="blue" icon="box" />
             <MetricCard title="Total Valor" value={`R$ ${(metricas.totalValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} subtitle="Faturamento" color="green" icon="money" />
@@ -974,6 +976,7 @@ export default function Home() {
               limiteClasseC={limiteClasseC}
               analyzedReferences={pcpAnalyzedReferences}
               isPcpMarked={isProdutoPcpMarked}
+              onVisibleCountChange={setPcpVisibleSkuCount}
               diretoriaReferences={diretoriaSavedReferences}
               approvedReferences={approvedReferences}
               onQuickClearReferencia={clearPcpReferencia}
@@ -1004,7 +1007,7 @@ export default function Home() {
               onChange={(e) => setShowOnlyPcpReviewed(e.target.checked)}
               className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
             />
-            Ver somente referencias onde o PCP ja marcou algo
+            Ver somente SKUs marcados pelo PCP
           </label>
           <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
             <input
@@ -1037,7 +1040,7 @@ export default function Home() {
       {!loading && !error && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <MetricCard title="SKUs no corte" value={produtosDiretoriaFiltrados.length.toLocaleString('pt-BR')} subtitle={`Acima de ${limiteClasseC}%`} color="red" icon="warning" />
+            <MetricCard title="SKUs no corte" value={diretoriaVisibleSkuCount.toLocaleString('pt-BR')} subtitle="Apos filtros da tabela" color="red" icon="warning" />
             <MetricCard title="Refs PCP" value={pcpAnalyzedReferences.size.toLocaleString('pt-BR')} subtitle="Base vinda do PCP" color="blue" icon="box" />
             <MetricCard title="Itens Diretoria" value={diretoriaFlags.length.toLocaleString('pt-BR')} subtitle="Ja avaliados pela diretoria" color="green" icon="chart" />
             <MetricCard title="Aprovados" value={approvedFlags.length.toLocaleString('pt-BR')} subtitle="Ja enviados para retirada" color="green" icon="money" />
@@ -1056,6 +1059,7 @@ export default function Home() {
               limiteClasseC={limiteClasseC}
               analyzedReferences={pcpAnalyzedReferences}
               isPcpMarked={isProdutoPcpMarked}
+              onVisibleCountChange={setDiretoriaVisibleSkuCount}
               diretoriaReferences={diretoriaSavedReferences}
               approvedReferences={approvedReferences}
             />

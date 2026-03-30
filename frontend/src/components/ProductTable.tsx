@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Produto } from '@/services/api';
 
 interface ProductTableProps {
@@ -9,6 +9,7 @@ interface ProductTableProps {
   limiteClasseC?: number;
   analyzedReferences?: Set<string>;
   isPcpMarked?: (produto: Produto) => boolean;
+  onVisibleCountChange?: (count: number) => void;
   diretoriaReferences?: Set<string>;
   approvedReferences?: Set<string>;
   onQuickClearReferencia?: (referencia: string) => void | Promise<void>;
@@ -30,6 +31,7 @@ export default function ProductTable({
   limiteClasseC = 95,
   analyzedReferences,
   isPcpMarked,
+  onVisibleCountChange,
   diretoriaReferences,
   approvedReferences,
   onQuickClearReferencia
@@ -173,6 +175,12 @@ export default function ProductTable({
     const skusClasseC = filteredAndSorted.filter(p => p.classificacao === 'C').length;
     return { totalSkus, skusClasseA, skusClasseB, skusClasseC };
   }, [filteredAndSorted]);
+
+  useEffect(() => {
+    if (onVisibleCountChange) {
+      onVisibleCountChange(filteredAndSorted.length);
+    }
+  }, [filteredAndSorted.length, onVisibleCountChange]);
 
   const getClassBadge = (classificacao: string) => {
     const colors = {
