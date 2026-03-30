@@ -4,17 +4,22 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   produtosApi,
   flagsApi,
+  cenariosApi,
   Produto,
   Metricas,
   RetiradaFlag,
   FlagStatus,
   FlagTargetType,
-  WorkflowStage
+  WorkflowStage,
+  Scenario,
+  ScenarioItem,
+  ScenarioSummary
 } from '@/services/api';
 import MetricCard from '@/components/MetricCard';
 import ProductTable from '@/components/ProductTable';
 import FilterPanel from '@/components/FilterPanel';
 import ReferenciaModalLocal from '@/components/ReferenciaModalLocal';
+import ScenarioComparison from '@/components/ScenarioComparison';
 import { useNavigation } from '@/components/NavigationContext';
 
 type SaveSelectionsPayload = {
@@ -53,6 +58,7 @@ export default function Home() {
   const [flags, setFlags] = useState<RetiradaFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [flagsLoading, setFlagsLoading] = useState(false);
+  const [cenariosLoading, setCenariosLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ano, setAno] = useState(2026);
   const [aplicarFiltro, setAplicarFiltro] = useState(true);
@@ -68,6 +74,7 @@ export default function Home() {
   const [approvingAllDiretoria, setApprovingAllDiretoria] = useState(false);
   const [pcpVisibleSkuCount, setPcpVisibleSkuCount] = useState(0);
   const [diretoriaVisibleSkuCount, setDiretoriaVisibleSkuCount] = useState(0);
+  const [cenarios, setCenarios] = useState<Scenario[]>([]);
   const [empresasReady, setEmpresasReady] = useState(false);
   const latestRequestId = useRef(0);
 
@@ -171,6 +178,22 @@ export default function Home() {
     setSelectedEmpresas((current) => current.length === 0 ? initialIds : current);
     setEmpresasReady(true);
   }, []);
+
+  const carregarCenarios = useCallback(async () => {
+    setCenariosLoading(true);
+    try {
+      const response = await cenariosApi.list();
+      setCenarios(response.cenarios);
+    } catch (err) {
+      console.error('Erro ao carregar cenarios:', err);
+    } finally {
+      setCenariosLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarCenarios();
+  }, [carregarCenarios]);
 
   const produtosComClassificacao = useMemo(() => {
     return produtos.map((p) => ({
@@ -366,6 +389,31 @@ export default function Home() {
     totalQtd: pcpMarkedProdutos.reduce((sum, produto) => sum + produto.qt_liquida, 0),
     totalValor: pcpMarkedProdutos.reduce((sum, produto) => sum + produto.vl_total, 0)
   }), [pcpMarkedProdutos]);
+
+  const pcpMarkedScenarioItems = useMemo<ScenarioItem[]>(() => (
+    pcpMarkedProdutos.map((produto) => ({
+      cd_produto: Number(produto.cd_produto),
+      referencia: produto.referencia || '',
+      grupo: produto.grupo || '-',
+      descricao: produto.descricao || '',
+      cor: produto.cor || '',
+      tam: produto.tam || '',
+      qt_liquida: Number(produto.qt_liquida || 0),
+      vl_total: Number(produto.vl_total || 0),
+      percent_individual: Number(produto.percent_individual || 0),
+      percent_acumulado: Number(produto.percent_acumulado || 0),
+      classificacao: produto.classificacao || '-',
+      suspenso: Boolean(produto.suspenso)
+    }))
+  ), [pcpMarkedProdutos]);
+
+  const currentPcpScenarioSummary = useMemo<ScenarioSummary>(() => ({
+    totalSkus: pcpMarkedTotals.totalSkus,
+    totalQtd: pcpMarkedTotals.totalQtd,
+    totalValor: pcpMarkedTotals.totalValor,
+    referencias: new Set(pcpMarkedProdutos.map((produto) => produto.referencia).filter(Boolean)).size,
+    representatividadePercent: metricas && metricas.totalValor > 0 ? (pcpMarkedTotals.totalValor / metricas.totalValor) * 100 : 0
+  }), [metricas, pcpMarkedProdutos, pcpMarkedTotals]);
 
   const produtosDiretoriaFiltrados = useMemo(() => {
     // Diretoria precisa enxergar tudo que o PCP marcou, mesmo fora do corte Classe C.
@@ -892,6 +940,43 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, [retiradaFinalRows]);
 
+  const saveCurrentPcpScenario = useCallback(async (nome: string) => {
+    await cenariosApi.create({
+      nome,
+      origem: 'pcp',
+      ano,
+      summary: currentPcpScenarioSummary,
+      items: pcpMarkedScenarioItems
+    });
+    await carregarCenarios();
+  }, [ano, carregarCenarios, currentPcpScenarioSummary, pcpMarkedScenarioItems]);
+
+  const importScenario = useCallback(async ({
+    nome,
+    origem,
+    summary,
+    items
+  }: {
+    nome: string;
+    origem: string;
+    summary: ScenarioSummary;
+    items: ScenarioItem[];
+  }) => {
+    await cenariosApi.create({
+      nome,
+      origem,
+      ano,
+      summary,
+      items
+    });
+    await carregarCenarios();
+  }, [ano, carregarCenarios]);
+
+  const deleteScenario = useCallback(async (id: string) => {
+    await cenariosApi.remove(id);
+    await carregarCenarios();
+  }, [carregarCenarios]);
+
   const renderRepresentatividade = () => (
     <>
       <div>
@@ -950,14 +1035,14 @@ export default function Home() {
 
       {!loading && !error && metricas && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
-            <MetricCard title="SKUs no corte" value={pcpVisibleSkuCount.toLocaleString('pt-BR')} subtitle="Apos filtros da tabela" color="blue" icon="box" />
-            <MetricCard title="SKUs (80% valor)" value={metricas.skus80Percent.toLocaleString('pt-BR')} subtitle="Concentracao principal" color="green" icon="chart" />
-            <MetricCard title="Total Qtd" value={metricas.totalVendido.toLocaleString('pt-BR')} subtitle="Unidades" color="blue" icon="box" />
-            <MetricCard title="Total Valor" value={`R$ ${(metricas.totalValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} subtitle="Faturamento" color="green" icon="money" />
-            <MetricCard title="Qtd Marcada" value={pcpMarkedTotals.totalQtd.toLocaleString('pt-BR')} subtitle={`${pcpMarkedTotals.totalSkus.toLocaleString('pt-BR')} SKUs marcados`} color="red" icon="box" />
-            <MetricCard title="Valor Marcado" value={`R$ ${pcpMarkedTotals.totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Valor total dos SKUs marcados" color="red" icon="money" />
-            <MetricCard title="Refs PCP" value={pcpAnalyzedReferences.size.toLocaleString('pt-BR')} subtitle="Ja analisadas pelo PCP" color="red" icon="warning" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <MetricCard compact title="SKUs no corte" value={pcpVisibleSkuCount.toLocaleString('pt-BR')} subtitle="Apos filtros da tabela" color="blue" icon="box" />
+            <MetricCard compact title="SKUs (80% valor)" value={metricas.skus80Percent.toLocaleString('pt-BR')} subtitle="Concentracao principal" color="green" icon="chart" />
+            <MetricCard compact title="Total Qtd" value={metricas.totalVendido.toLocaleString('pt-BR')} subtitle="Unidades" color="blue" icon="box" />
+            <MetricCard compact title="Total Valor" value={`R$ ${(metricas.totalValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} subtitle="Faturamento" color="green" icon="money" />
+            <MetricCard compact title="Qtd Marcada" value={pcpMarkedTotals.totalQtd.toLocaleString('pt-BR')} subtitle={`${pcpMarkedTotals.totalSkus.toLocaleString('pt-BR')} SKUs marcados`} color="red" icon="box" />
+            <MetricCard compact title="Valor Marcado" value={`R$ ${pcpMarkedTotals.totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Valor total dos SKUs marcados" color="red" icon="money" />
+            <MetricCard compact title="Refs PCP" value={pcpAnalyzedReferences.size.toLocaleString('pt-BR')} subtitle="Ja analisadas pelo PCP" color="red" icon="warning" />
           </div>
 
           <div>
@@ -1091,11 +1176,11 @@ export default function Home() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <MetricCard title="Linhas SKU" value={retiradaFinalRows.length.toLocaleString('pt-BR')} subtitle="Lista final operacional" color="red" icon="warning" />
-        <MetricCard title="Referencias" value={new Set(retiradaFinalRows.map((row) => row.referencia).filter(Boolean)).size.toLocaleString('pt-BR')} subtitle="Com aprovacao final" color="blue" icon="box" />
-        <MetricCard title="Origem PCP" value={retiradaFinalRows.filter((row) => row.origem === 'PCP').length.toLocaleString('pt-BR')} subtitle="Linhas vindas do PCP" color="blue" icon="chart" />
-        <MetricCard title="Origem Diretoria" value={retiradaFinalRows.filter((row) => row.origem === 'DIRETORIA').length.toLocaleString('pt-BR')} subtitle="Linhas definidas pela diretoria" color="green" icon="money" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <MetricCard compact title="Linhas SKU" value={retiradaFinalRows.length.toLocaleString('pt-BR')} subtitle="Lista final operacional" color="red" icon="warning" />
+        <MetricCard compact title="Referencias" value={new Set(retiradaFinalRows.map((row) => row.referencia).filter(Boolean)).size.toLocaleString('pt-BR')} subtitle="Com aprovacao final" color="blue" icon="box" />
+        <MetricCard compact title="Origem PCP" value={retiradaFinalRows.filter((row) => row.origem === 'PCP').length.toLocaleString('pt-BR')} subtitle="Linhas vindas do PCP" color="blue" icon="chart" />
+        <MetricCard compact title="Origem Diretoria" value={retiradaFinalRows.filter((row) => row.origem === 'DIRETORIA').length.toLocaleString('pt-BR')} subtitle="Linhas definidas pela diretoria" color="green" icon="money" />
       </div>
 
       <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
@@ -1211,6 +1296,18 @@ export default function Home() {
         {!error && activeSection === 'representatividade' && renderRepresentatividade()}
         {!error && activeSection === 'aprovar-retirada' && renderDiretoria()}
         {!error && activeSection === 'retirada-final' && renderRetiradaFinal()}
+        {!error && activeSection === 'cenarios' && (
+          <ScenarioComparison
+            ano={ano}
+            cenarios={cenarios}
+            loading={cenariosLoading}
+            onSaveCurrent={saveCurrentPcpScenario}
+            onImportScenario={importScenario}
+            onDeleteScenario={deleteScenario}
+            currentScenarioSummary={currentPcpScenarioSummary}
+            baseTotalValor={metricas?.totalValor || 0}
+          />
+        )}
         {!error && activeSection === 'pareto' && (
           <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
             <h1 className="text-2xl font-bold text-gray-900">Analise Pareto</h1>

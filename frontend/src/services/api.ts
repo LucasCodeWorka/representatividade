@@ -131,6 +131,51 @@ export interface FlagResponse {
   flag: RetiradaFlag;
 }
 
+export interface ScenarioItem {
+  cd_produto: number;
+  referencia: string;
+  grupo: string;
+  descricao: string;
+  cor: string;
+  tam: string;
+  qt_liquida: number;
+  vl_total: number;
+  percent_individual: number;
+  percent_acumulado: number;
+  classificacao: string;
+  suspenso: boolean;
+}
+
+export interface ScenarioSummary {
+  totalSkus: number;
+  totalQtd: number;
+  totalValor: number;
+  referencias: number;
+  representatividadePercent: number;
+}
+
+export interface Scenario {
+  id: string;
+  nome: string;
+  origem: string;
+  ano: number;
+  summary: ScenarioSummary;
+  items: ScenarioItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScenariosResponse {
+  success: boolean;
+  total: number;
+  cenarios: Scenario[];
+}
+
+export interface ScenarioResponse {
+  success: boolean;
+  cenario: Scenario;
+}
+
 export const produtosApi = {
   async getRepresentatividade(ano: number = 2026, filtro: boolean = true, empresas: number[] = []): Promise<RepresentatividadeResponse> {
     const response = await api.get<RepresentatividadeResponse>('/produtos/representatividade', {
@@ -188,6 +233,28 @@ export const flagsApi = {
 
   async remove(id: string): Promise<void> {
     await api.delete(`/flags/${id}`);
+  }
+};
+
+export const cenariosApi = {
+  async list(): Promise<ScenariosResponse> {
+    const response = await api.get<ScenariosResponse>('/cenarios');
+    return response.data;
+  },
+
+  async create(payload: {
+    nome: string;
+    origem: string;
+    ano: number;
+    summary: ScenarioSummary;
+    items: ScenarioItem[];
+  }): Promise<ScenarioResponse> {
+    const response = await api.post<ScenarioResponse>('/cenarios', payload);
+    return response.data;
+  },
+
+  async remove(id: string): Promise<void> {
+    await api.delete(`/cenarios/${id}`);
   }
 };
 

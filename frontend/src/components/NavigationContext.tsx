@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from 'react';
 
-export type MenuSection = 'representatividade' | 'aprovar-retirada' | 'retirada-final' | 'pareto' | 'configuracoes';
+export type MenuSection = 'representatividade' | 'aprovar-retirada' | 'retirada-final' | 'cenarios' | 'pareto' | 'configuracoes';
 
 interface NavigationContextValue {
   activeSection: MenuSection;

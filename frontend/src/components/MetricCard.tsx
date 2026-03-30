@@ -6,6 +6,7 @@ interface MetricCardProps {
   subtitle?: string;
   color?: 'blue' | 'green' | 'yellow' | 'red' | 'rose';
   icon?: 'box' | 'chart' | 'money' | 'warning' | 'check';
+  compact?: boolean;
 }
 
 const colorClasses = {
@@ -64,20 +65,22 @@ const icons = {
   ),
 };
 
-export default function MetricCard({ title, value, subtitle, color = 'blue', icon }: MetricCardProps) {
+export default function MetricCard({ title, value, subtitle, color = 'blue', icon, compact = false }: MetricCardProps) {
   const colors = colorClasses[color];
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{title}</p>
-          <p className={`text-2xl font-bold mt-1 ${colors.text}`}>{value}</p>
-          {subtitle && <p className="text-xs text-gray-400 mt-1">{subtitle}</p>}
+    <div className={`bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow ${compact ? 'p-2.5' : 'p-3'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-medium text-gray-500 uppercase tracking-wide leading-tight`}>{title}</p>
+          <p className={`${compact ? 'text-base md:text-lg xl:text-xl' : 'text-lg md:text-xl xl:text-[22px]'} font-bold mt-1 leading-tight break-words ${colors.text}`}>{value}</p>
+          {subtitle && <p className={`${compact ? 'text-[10px]' : 'text-[11px]'} text-gray-400 mt-1 leading-snug break-words`}>{subtitle}</p>}
         </div>
         {icon && (
-          <div className={`${colors.bg} p-2 rounded-lg text-white`}>
-            {icons[icon]}
+          <div className={`${colors.bg} ${compact ? 'p-1' : 'p-1.5'} rounded-lg text-white shrink-0`}>
+            <div className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'}>
+              {icons[icon]}
+            </div>
           </div>
         )}
       </div>
