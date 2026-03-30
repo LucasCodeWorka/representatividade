@@ -356,6 +356,17 @@ export default function Home() {
     return base.filter((produto) => isProdutoPcpMarked(produto));
   }, [isProdutoPcpMarked, produtosFiltrados, showOnlyPcpSavedInPcp]);
 
+  const pcpMarkedProdutos = useMemo(
+    () => produtosComClassificacao.filter((produto) => isProdutoPcpMarked(produto)),
+    [isProdutoPcpMarked, produtosComClassificacao]
+  );
+
+  const pcpMarkedTotals = useMemo(() => ({
+    totalSkus: pcpMarkedProdutos.length,
+    totalQtd: pcpMarkedProdutos.reduce((sum, produto) => sum + produto.qt_liquida, 0),
+    totalValor: pcpMarkedProdutos.reduce((sum, produto) => sum + produto.vl_total, 0)
+  }), [pcpMarkedProdutos]);
+
   const produtosDiretoriaFiltrados = useMemo(() => {
     // Diretoria precisa enxergar tudo que o PCP marcou, mesmo fora do corte Classe C.
     let base = produtosComClassificacao.filter(
@@ -939,11 +950,13 @@ export default function Home() {
 
       {!loading && !error && metricas && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
             <MetricCard title="SKUs no corte" value={pcpVisibleSkuCount.toLocaleString('pt-BR')} subtitle="Apos filtros da tabela" color="blue" icon="box" />
             <MetricCard title="SKUs (80% valor)" value={metricas.skus80Percent.toLocaleString('pt-BR')} subtitle="Concentracao principal" color="green" icon="chart" />
             <MetricCard title="Total Qtd" value={metricas.totalVendido.toLocaleString('pt-BR')} subtitle="Unidades" color="blue" icon="box" />
             <MetricCard title="Total Valor" value={`R$ ${(metricas.totalValor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} subtitle="Faturamento" color="green" icon="money" />
+            <MetricCard title="Qtd Marcada" value={pcpMarkedTotals.totalQtd.toLocaleString('pt-BR')} subtitle={`${pcpMarkedTotals.totalSkus.toLocaleString('pt-BR')} SKUs marcados`} color="red" icon="box" />
+            <MetricCard title="Valor Marcado" value={`R$ ${pcpMarkedTotals.totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Valor total dos SKUs marcados" color="red" icon="money" />
             <MetricCard title="Refs PCP" value={pcpAnalyzedReferences.size.toLocaleString('pt-BR')} subtitle="Ja analisadas pelo PCP" color="red" icon="warning" />
           </div>
 
