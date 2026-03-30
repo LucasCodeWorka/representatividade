@@ -171,6 +171,20 @@ export default function ReferenciaModalLocal({
   const skusClasseC = skusDaReferencia.filter((s) => s.classificacao === 'C').length;
   const temClasseC = skusClasseC > 0;
   const hasApprovedFlags = flags.some((flag) => flag.referencia === referencia && flag.status === 'aprovado');
+  const modalFlagsCount = (() => {
+    const flagsAtivos = flags.filter(
+      (flag) => flag.status !== 'rejeitado' && flag.referencia === referencia
+    );
+
+    if (mode === 'DIRETORIA') {
+      const diretoriaFlags = flagsAtivos.filter((flag) => flag.stage === 'DIRETORIA');
+      return diretoriaFlags.length > 0
+        ? diretoriaFlags.length
+        : flagsAtivos.filter((flag) => flag.stage === 'PCP').length;
+    }
+
+    return flagsAtivos.filter((flag) => flag.stage === 'PCP').length;
+  })();
 
   const getClassBadge = (classificacao: string) => {
     const colors = {
@@ -517,7 +531,7 @@ export default function ReferenciaModalLocal({
 
         <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
           <span className="text-sm text-gray-500">
-            {flags.filter((flag) => flag.status !== 'rejeitado').length} marcacao(oes) carregada(s)
+            {modalFlagsCount} marcacao(oes) carregada(s) nesta referencia
           </span>
           <div className="flex items-center gap-3">
             <button
