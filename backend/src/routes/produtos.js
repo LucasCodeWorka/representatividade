@@ -164,4 +164,30 @@ router.post('/cache/limpar', (req, res) => {
   res.json({ success: true, message: 'Cache limpo com sucesso' });
 });
 
+// POST /api/produtos/cache/force-reload
+// Força recalculo IMEDIATO sem usar cache
+router.post('/cache/force-reload', async (req, res) => {
+  try {
+    console.log('[FORCE RELOAD] Limpando cache...');
+    produtoService.limparCache();
+
+    console.log('[FORCE RELOAD] Recalculando representatividade...');
+    const ano = parseInt(req.body.ano) || 2026;
+    const resultado = await produtoService.getRepresentatividade(ano, true, []);
+
+    res.json({
+      success: true,
+      message: 'Cache recarregado com dados frescos',
+      totalProdutos: resultado.produtos.length,
+      amostra: resultado.produtos[0]
+    });
+  } catch (error) {
+    console.error('[FORCE RELOAD] Erro:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

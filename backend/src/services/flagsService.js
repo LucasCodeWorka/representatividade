@@ -34,12 +34,24 @@ const CREATE_TABLE_SQL = `
 `;
 
 function normalizeTarget(payload) {
+  const normalizeNullableText = (value) => {
+    if (value === null || value === undefined) return null;
+    const text = String(value).trim();
+    return text.length > 0 ? text : null;
+  };
+
+  const normalizeCdProduto = (value) => {
+    if (value === null || value === undefined) return null;
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? Math.floor(num) : null;
+  };
+
   return {
     targetType: payload.targetType,
     stage: payload.stage || 'PCP',
-    referencia: payload.referencia || null,
-    cor: payload.cor || null,
-    cd_produto: payload.cd_produto ?? null,
+    referencia: normalizeNullableText(payload.referencia),
+    cor: normalizeNullableText(payload.cor),
+    cd_produto: normalizeCdProduto(payload.cd_produto),
   };
 }
 
@@ -62,21 +74,42 @@ function mapRow(row) {
 
 const flagsService = {
   tableReady: false,
+  initError: null,
+
+  unavailableError() {
+    if (this.initError) {
+      return new Error(`Banco de flags indisponivel: ${this.initError}`);
+    }
+    return new Error('Banco de flags indisponivel');
+  },
 
   async ensureTable() {
     if (this.tableReady) return;
+
     try {
       await pool.query(CREATE_TABLE_SQL);
       this.tableReady = true;
-    } catch (err) {
-      console.warn('[FLAGS] Tabela não disponível (banco read-only?), usando modo sem persistência:', err.message);
-      this.tableReady = false;
+      this.initError = null;
+      return;
+    } catch (migrationErr) {
+      try {
+        await pool.query('SELECT 1 FROM retirada_flags LIMIT 1');
+        this.tableReady = true;
+        this.initError = null;
+        console.warn('[FLAGS] Sem permissao para migracao automatica. Usando tabela retirada_flags existente.');
+        return;
+      } catch (readErr) {
+        this.tableReady = false;
+        this.initError = readErr.message || migrationErr.message;
+        console.error('[FLAGS] Falha ao inicializar retirada_flags:', this.initError);
+      }
     }
   },
 
   async listFlags() {
     await this.ensureTable();
-    if (!this.tableReady) return [];
+    if (!this.tableReady) throw this.unavailableError();
+
     const result = await pool.query(`
       SELECT
         id,
@@ -99,8 +132,18 @@ const flagsService = {
 
   async createFlag(payload) {
     await this.ensureTable();
-    if (!this.tableReady) throw new Error('Banco de flags não disponível');
+    if (!this.tableReady) throw this.unavailableError();
     const target = normalizeTarget(payload);
+
+    console.log('[FLAGS CREATE] Payload recebido:', JSON.stringify({
+      targetType: payload.targetType,
+      stage: payload.stage,
+      referencia: payload.referencia,
+      cor: payload.cor,
+      cd_produto: payload.cd_produto,
+      cd_produto_type: typeof payload.cd_produto
+    }));
+    console.log('[FLAGS CREATE] Target normalizado:', JSON.stringify(target));
 
     const existing = await pool.query(
       `
@@ -129,6 +172,7 @@ const flagsService = {
     );
 
     if (existing.rows.length > 0) {
+      console.log('[FLAGS CREATE] Flag já existe (id:', existing.rows[0].id, '), atualizando...');
       const updated = await pool.query(
         `
           UPDATE retirada_flags
@@ -161,9 +205,12 @@ const flagsService = {
           JSON.stringify(payload.snapshot || existing.rows[0].snapshot || {})
         ]
       );
-      return mapRow(updated.rows[0]);
+      const result = mapRow(updated.rows[0]);
+      console.log('[FLAGS CREATE] Flag atualizada:', JSON.stringify({ id: result.id, targetType: result.targetType, cd_produto: result.cd_produto }));
+      return result;
     }
 
+    console.log('[FLAGS CREATE] Criando nova flag...');
     const inserted = await pool.query(
       `
         INSERT INTO retirada_flags (
@@ -205,12 +252,15 @@ const flagsService = {
       ]
     );
 
-    return mapRow(inserted.rows[0]);
+    const result = mapRow(inserted.rows[0]);
+    console.log('[FLAGS CREATE] Flag criada:', JSON.stringify({ id: result.id, targetType: result.targetType, cd_produto: result.cd_produto }));
+    return result;
   },
 
   async updateFlag(id, payload) {
     await this.ensureTable();
-    if (!this.tableReady) throw new Error('Banco de flags não disponível');
+    if (!this.tableReady) throw this.unavailableError();
+
     const result = await pool.query(
       `
         UPDATE retirada_flags
@@ -253,7 +303,8 @@ const flagsService = {
 
   async deleteFlag(id) {
     await this.ensureTable();
-    if (!this.tableReady) throw new Error('Banco de flags não disponível');
+    if (!this.tableReady) throw this.unavailableError();
+
     const result = await pool.query('DELETE FROM retirada_flags WHERE id = $1', [Number(id)]);
     if (result.rowCount === 0) {
       throw new Error('Flag nao encontrada');

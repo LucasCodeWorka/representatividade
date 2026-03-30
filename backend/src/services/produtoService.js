@@ -259,7 +259,7 @@ const produtoService = {
 
       // Converter para array e ordenar
       const vendas = Array.from(vendasMap.entries())
-        .map(([cd_produto, dados]) => ({ cd_produto, qt_liquida: dados.qt_liquida, vl_total: dados.vl_total }))
+        .map(([cd_produto, dados]) => ({ cd_produto: Number(cd_produto), qt_liquida: dados.qt_liquida, vl_total: dados.vl_total }))
         .filter(v => v.qt_liquida > 0)
         .sort((a, b) => b.qt_liquida - a.qt_liquida);
 
@@ -277,26 +277,31 @@ const produtoService = {
       return new Map();
     }
 
+    console.log(`[DETALHES] Buscando detalhes para ${cdProdutos.length} produtos...`);
+
     try {
       // OTIMIZAÇÃO: Consultas isoladas em paralelo (mais rápido que funções no SELECT)
       const [detalhesBasicos, referencias, grupos, suspensos] = await Promise.all([
-        // 1. Dados básicos do produto (SEM funções)
+        // 1. Dados básicos do produto (SEM funções) - COALESCE para evitar NULL
         pool.query(`
-          SELECT cd_produto, nm_produto AS descricao, ds_cor AS cor, ds_tamanho AS tam
+          SELECT cd_produto,
+                 COALESCE(nm_produto, 'SEM DESCRICAO') AS descricao,
+                 COALESCE(ds_cor, 'SEM COR') AS cor,
+                 COALESCE(ds_tamanho, 'U') AS tam
           FROM vr_prd_prdgrade
           WHERE cd_produto = ANY($1)
         `, [cdProdutos]),
 
-        // 2. Referências (função isolada)
+        // 2. Referências (função isolada) - COALESCE para evitar NULL
         pool.query(`
-          SELECT cd_produto, f_dic_prd_nivel(cd_produto, 'CD') AS referencia
+          SELECT cd_produto, COALESCE(f_dic_prd_nivel(cd_produto, 'CD'), 'SEM REF') AS referencia
           FROM vr_prd_prdgrade
           WHERE cd_produto = ANY($1)
         `, [cdProdutos]),
 
-        // 3. Grupos (função isolada)
+        // 3. Grupos (função isolada) - COALESCE para evitar NULL
         pool.query(`
-          SELECT cd_produto, f_dic_prd_classificacao(cd_produto, 'DS', 25) AS grupo
+          SELECT cd_produto, COALESCE(f_dic_prd_classificacao(cd_produto, 'DS', 25), 'SEM GRUPO') AS grupo
           FROM vr_prd_prdgrade
           WHERE cd_produto = ANY($1)
         `, [cdProdutos]),
@@ -312,20 +317,31 @@ const produtoService = {
 
       // JOIN em memória (rápido)
       const detalhesMap = new Map();
-      const refMap = new Map(referencias.rows.map(r => [r.cd_produto, r.referencia]));
-      const grupoMap = new Map(grupos.rows.map(r => [r.cd_produto, r.grupo]));
-      const suspensoMap = new Map(suspensos.rows.map(r => [r.cd_produto, r.suspenso]));
+      const refMap = new Map(referencias.rows.map(r => [Number(r.cd_produto), r.referencia]));
+      const grupoMap = new Map(grupos.rows.map(r => [Number(r.cd_produto), r.grupo]));
+      const suspensoMap = new Map(suspensos.rows.map(r => [Number(r.cd_produto), r.suspenso]));
 
       detalhesBasicos.rows.forEach(row => {
-        detalhesMap.set(row.cd_produto, {
+        const cdProduto = Number(row.cd_produto);
+        const ref = refMap.get(cdProduto);
+        const grp = grupoMap.get(cdProduto);
+
+        detalhesMap.set(cdProduto, {
           descricao: row.descricao,
           cor: row.cor,
           tam: row.tam,
-          referencia: refMap.get(row.cd_produto) || '',
-          grupo: grupoMap.get(row.cd_produto) || '',
-          suspenso: suspensoMap.get(row.cd_produto) || false
+          referencia: ref !== undefined && ref !== null ? ref : 'SEM REF',
+          grupo: grp !== undefined && grp !== null ? grp : 'SEM GRUPO',
+          suspenso: suspensoMap.get(cdProduto) || false
         });
       });
+
+      console.log(`[DETALHES] ${detalhesBasicos.rows.length} produtos básicos encontrados`);
+      console.log(`[DETALHES] ${referencias.rows.length} referências encontradas`);
+      console.log(`[DETALHES] ${grupos.rows.length} grupos encontrados`);
+      console.log(`[DETALHES] ${suspensos.rows.length} suspensos encontrados`);
+      console.log(`[DETALHES] Amostra primeiro produto:`, detalhesBasicos.rows[0]);
+      console.log(`[DETALHES] Amostra primeira referência:`, referencias.rows[0]);
 
       return detalhesMap;
     } catch (error) {
@@ -396,7 +412,7 @@ const produtoService = {
         const detalhe = detalhes.get(venda.cd_produto) || {};
 
         return {
-          cd_produto: venda.cd_produto,
+          cd_produto: Number(venda.cd_produto),
           descricao: detalhe.descricao || '-',
           cor: detalhe.cor || '-',
           tam: detalhe.tam || '-',
@@ -582,7 +598,7 @@ const produtoService = {
         acumulado += percentIndividual;
 
         return {
-          cd_produto: row.cd_produto,
+          cd_produto: Number(row.cd_produto),
           descricao: row.descricao,
           cor: row.cor,
           tam: row.tam,

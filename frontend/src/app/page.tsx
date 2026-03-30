@@ -65,20 +65,66 @@ export default function Home() {
   const [clearingPcp, setClearingPcp] = useState(false);
   const [showApprovedInDiretoria, setShowApprovedInDiretoria] = useState(false);
   const [clearingDiretoria, setClearingDiretoria] = useState(false);
+  const [approvingAllDiretoria, setApprovingAllDiretoria] = useState(false);
   const [empresasReady, setEmpresasReady] = useState(false);
   const latestRequestId = useRef(0);
+
+  const normalizeText = useCallback((value: string | null | undefined) => {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+  }, []);
+
+  const normalizeProduto = useCallback((produto: Produto): Produto => {
+    const toNumber = (value: unknown, fallback: number = 0) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : fallback;
+    };
+
+    return {
+      ...produto,
+      cd_produto: toNumber(produto.cd_produto, 0),
+      qt_liquida: toNumber(produto.qt_liquida, 0),
+      vl_total: toNumber(produto.vl_total, 0),
+      percent_individual: toNumber(produto.percent_individual, 0),
+      percent_acumulado: toNumber(produto.percent_acumulado, 0),
+      referencia: normalizeText(produto.referencia),
+      cor: normalizeText(produto.cor),
+      tam: normalizeText(produto.tam),
+      grupo: normalizeText(produto.grupo),
+      descricao: normalizeText(produto.descricao)
+    };
+  }, [normalizeText]);
+
+  const normalizeFlag = useCallback((flag: RetiradaFlag): RetiradaFlag => {
+    const cdProduto =
+      flag.cd_produto === null || flag.cd_produto === undefined
+        ? null
+        : Number(flag.cd_produto);
+
+    return {
+      ...flag,
+      cd_produto: cdProduto !== null && Number.isFinite(cdProduto) ? cdProduto : null,
+      referencia: flag.referencia === null ? null : normalizeText(flag.referencia),
+      cor: flag.cor === null ? null : normalizeText(flag.cor),
+      reason: normalizeText(flag.reason),
+      notes: normalizeText(flag.notes)
+    };
+  }, [normalizeText]);
 
   const carregarFlags = useCallback(async () => {
     setFlagsLoading(true);
     try {
       const response = await flagsApi.list();
-      setFlags(response.flags);
+      const normalized = response.flags.map(normalizeFlag);
+      console.log('[FLAGS] Flags carregadas do backend:', normalized.length);
+      console.log('[FLAGS] Flags SKU:', normalized.filter(f => f.targetType === 'SKU').map(f => ({ id: f.id, cd_produto: f.cd_produto, type: typeof f.cd_produto })));
+      setFlags(normalized);
     } catch (err) {
       console.error('Erro ao carregar flags:', err);
     } finally {
       setFlagsLoading(false);
     }
-  }, []);
+  }, [normalizeFlag]);
 
   const carregarDados = useCallback(async () => {
     if (!empresasReady) {
@@ -95,7 +141,7 @@ export default function Home() {
         return;
       }
 
-      setProdutos(response.produtos);
+      setProdutos(response.produtos.map(normalizeProduto));
       setMetricas(response.metricas);
     } catch (err: any) {
       if (requestId !== latestRequestId.current) {
@@ -109,7 +155,7 @@ export default function Home() {
         setLoading(false);
       }
     }
-  }, [ano, aplicarFiltro, empresasReady, selectedEmpresas]);
+  }, [ano, aplicarFiltro, empresasReady, normalizeProduto, selectedEmpresas]);
 
   useEffect(() => {
     carregarDados();
@@ -134,10 +180,6 @@ export default function Home() {
   const produtosFiltrados = useMemo(() => {
     return produtosComClassificacao.filter((p) => p.percent_acumulado <= percentAcumuladoMax);
   }, [produtosComClassificacao, percentAcumuladoMax]);
-
-  const produtosDiretoria = useMemo(() => {
-    return produtosComClassificacao.filter((p) => p.percent_acumulado > limiteClasseC);
-  }, [produtosComClassificacao, limiteClasseC]);
 
   const impactoCortes = useMemo(() => {
     const totalValor = produtos.reduce((sum, p) => sum + p.vl_total, 0);
@@ -165,6 +207,33 @@ export default function Home() {
   const pcpFlags = useMemo(
     () => activeFlags.filter((flag) => flag.stage === 'PCP'),
     [activeFlags]
+  );
+
+  const pcpReferenceKeys = useMemo(
+    () => new Set(
+      pcpFlags
+        .filter((flag) => flag.targetType === 'REFERENCIA' && flag.referencia)
+        .map((flag) => String(flag.referencia))
+    ),
+    [pcpFlags]
+  );
+
+  const pcpColorKeys = useMemo(
+    () => new Set(
+      pcpFlags
+        .filter((flag) => flag.targetType === 'COR' && flag.referencia && flag.cor)
+        .map((flag) => `${String(flag.referencia)}|${String(flag.cor)}`)
+    ),
+    [pcpFlags]
+  );
+
+  const pcpSkuKeys = useMemo(
+    () => new Set(
+      pcpFlags
+        .filter((flag) => flag.targetType === 'SKU' && flag.referencia && flag.cd_produto !== null)
+        .map((flag) => `${String(flag.referencia)}|${Number(flag.cd_produto)}`)
+    ),
+    [pcpFlags]
   );
 
   const diretoriaFlags = useMemo(
@@ -274,7 +343,10 @@ export default function Home() {
   }, [pcpAnalyzedReferences, produtosFiltrados, showOnlyPcpSavedInPcp]);
 
   const produtosDiretoriaFiltrados = useMemo(() => {
-    let base = produtosDiretoria;
+    // Diretoria precisa enxergar tudo que o PCP marcou, mesmo fora do corte Classe C.
+    let base = produtosComClassificacao.filter(
+      (produto) => produto.percent_acumulado > limiteClasseC || pcpAnalyzedReferences.has(produto.referencia)
+    );
 
     if (!showApprovedInDiretoria) {
       base = base.filter((produto) => !approvedReferences.has(produto.referencia));
@@ -285,7 +357,7 @@ export default function Home() {
     }
 
     return base;
-  }, [approvedReferences, pcpAnalyzedReferences, produtosDiretoria, showApprovedInDiretoria, showOnlyPcpReviewed]);
+  }, [approvedReferences, limiteClasseC, pcpAnalyzedReferences, produtosComClassificacao, showApprovedInDiretoria, showOnlyPcpReviewed]);
 
   const buildReferenciaSnapshot = useCallback((referenciaProdutos: Produto[]) => {
     const grupo = referenciaProdutos[0]?.grupo || '-';
@@ -349,6 +421,17 @@ export default function Home() {
     selectedColors,
     selectedSkuIds
   }: SaveSelectionsPayload) => {
+    console.log('[SYNC] Início syncSelections:', {
+      stage,
+      action,
+      referencia,
+      selectedReference,
+      selectedColorsCount: selectedColors.length,
+      selectedSkuIdsCount: selectedSkuIds.length,
+      selectedSkuIds: selectedSkuIds,
+      selectedSkuIdsTypes: selectedSkuIds.map(id => typeof id)
+    });
+
     const flagsDaEtapa = activeFlags.filter(
       (flag) => flag.stage === stage && flag.referencia === referencia
     );
@@ -362,7 +445,10 @@ export default function Home() {
     const statusToPersist: FlagStatus = action === 'approve' ? 'aprovado' : 'pendente_diretoria';
 
     const desiredColors = new Set(selectedColors);
-    const desiredSkus = new Set(selectedSkuIds);
+    const desiredSkus = new Set(selectedSkuIds.map((skuId) => Number(skuId)));
+
+    console.log('[SYNC] Flags existentes SKU:', skuFlags.map(f => ({ id: f.id, cd_produto: f.cd_produto, type: typeof f.cd_produto })));
+    console.log('[SYNC] Desired SKUs (Set):', Array.from(desiredSkus));
 
     const selectionFromFlags = (flagsToRead: RetiradaFlag[]) => ({
       reference: flagsToRead.some((flag) => flag.targetType === 'REFERENCIA'),
@@ -422,11 +508,18 @@ export default function Home() {
     });
 
     skuFlags.forEach((flag) => {
-      if (!desiredSkus.has(flag.cd_produto || -1)) {
+      const flagSkuId = flag.cd_produto === null || flag.cd_produto === undefined
+        ? -1
+        : Number(flag.cd_produto);
+      if (!desiredSkus.has(flagSkuId)) {
+        console.log('[SYNC] Removendo flag SKU:', { id: flag.id, cd_produto: flag.cd_produto, flagSkuId, hasInDesired: desiredSkus.has(flagSkuId) });
         removals.push(removeFlag(flag.id));
+      } else {
+        console.log('[SYNC] Mantendo flag SKU:', { id: flag.id, cd_produto: flag.cd_produto });
       }
     });
 
+    console.log('[SYNC] Total de remoções:', removals.length);
     await Promise.all(removals);
 
     if (selectedReference) {
@@ -472,22 +565,27 @@ export default function Home() {
     });
 
     selectedSkuIds.forEach((skuId) => {
-      const produto = referenciaProdutos.find((item) => item.cd_produto === skuId);
-      if (!produto) return;
+      const skuIdNumber = Number(skuId);
+      const produto = referenciaProdutos.find((item) => Number(item.cd_produto) === skuIdNumber);
+      if (!produto) {
+        console.log('[SYNC] SKU não encontrado em referenciaProdutos:', skuId);
+        return;
+      }
 
+      console.log('[SYNC] Criando flag SKU:', { cd_produto: skuIdNumber, type: typeof skuIdNumber });
       creations.push(
         saveFlag({
           targetType: 'SKU',
           stage,
           referencia,
           cor: produto.cor,
-          cd_produto: produto.cd_produto,
+          cd_produto: Number(produto.cd_produto),
           status: statusToPersist,
           snapshot: {
             ...baseSnapshot,
             alvo: {
               tipo: 'SKU',
-              cd_produto: produto.cd_produto,
+              cd_produto: Number(produto.cd_produto),
               descricao: produto.descricao,
               cor: produto.cor,
               tam: produto.tam,
@@ -503,8 +601,11 @@ export default function Home() {
       );
     });
 
+    console.log('[SYNC] Total de criações:', creations.length);
     await Promise.all(creations);
+    console.log('[SYNC] Recarregando flags do backend...');
     await carregarFlags();
+    console.log('[SYNC] Concluído');
   }, [activeFlags, buildReferenciaSnapshot, carregarFlags, removeFlag, saveFlag]);
 
   const clearPcpReferencia = useCallback(async (referencia: string) => {
@@ -563,6 +664,75 @@ export default function Home() {
     }
   }, [activeFlags, carregarFlags, produtosDiretoriaFiltrados, removeFlag]);
 
+  const approveAllDiretoriaVisible = useCallback(async () => {
+    setApprovingAllDiretoria(true);
+
+    const referenciasAlvo = new Set(
+      produtosDiretoriaFiltrados
+        .map((produto) => produto.referencia)
+        .filter((referencia): referencia is string => Boolean(referencia))
+    );
+
+    const updates: Promise<unknown>[] = [];
+
+    referenciasAlvo.forEach((referencia) => {
+      const diretoriaDaReferencia = activeFlags.filter(
+        (flag) =>
+          flag.referencia === referencia &&
+          flag.stage === 'DIRETORIA' &&
+          flag.status !== 'aprovado'
+      );
+
+      const pcpDaReferencia = activeFlags.filter(
+        (flag) =>
+          flag.referencia === referencia &&
+          flag.stage === 'PCP' &&
+          flag.status !== 'aprovado'
+      );
+
+      const sourceFlags = diretoriaDaReferencia.length > 0 ? diretoriaDaReferencia : pcpDaReferencia;
+      sourceFlags.forEach((flag) => {
+        updates.push(flagsApi.update(flag.id, { status: 'aprovado' }));
+      });
+    });
+
+    try {
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+      await carregarFlags();
+    } finally {
+      setApprovingAllDiretoria(false);
+    }
+  }, [activeFlags, carregarFlags, produtosDiretoriaFiltrados]);
+
+  const hasDiretoriaBulkApprovalTarget = useMemo(() => {
+    const referenciasAlvo = new Set(
+      produtosDiretoriaFiltrados
+        .map((produto) => produto.referencia)
+        .filter((referencia): referencia is string => Boolean(referencia))
+    );
+
+    for (const referencia of Array.from(referenciasAlvo)) {
+      const hasDiretoriaPendente = activeFlags.some(
+        (flag) =>
+          flag.referencia === referencia &&
+          flag.stage === 'DIRETORIA' &&
+          flag.status !== 'aprovado'
+      );
+      const hasPcpPendente = activeFlags.some(
+        (flag) =>
+          flag.referencia === referencia &&
+          flag.stage === 'PCP' &&
+          flag.status !== 'aprovado'
+      );
+      if (hasDiretoriaPendente || hasPcpPendente) {
+        return true;
+      }
+    }
+    return false;
+  }, [activeFlags, produtosDiretoriaFiltrados]);
+
   const undoDiretoriaApproval = useCallback(async (referencia: string) => {
     const approvedFlagsDaReferencia = activeFlags.filter(
       (flag) => flag.referencia === referencia && flag.status === 'aprovado'
@@ -602,6 +772,18 @@ export default function Home() {
 
     return null;
   }, [findExactFlag]);
+
+  const isProdutoPcpMarked = useCallback((produto: Produto) => {
+    const referencia = String(produto.referencia || '');
+    const cor = String(produto.cor || '');
+    const sku = Number(produto.cd_produto);
+
+    if (pcpReferenceKeys.has(referencia)) return true;
+    if (pcpColorKeys.has(`${referencia}|${cor}`)) return true;
+    if (pcpSkuKeys.has(`${referencia}|${sku}`)) return true;
+
+    return false;
+  }, [pcpColorKeys, pcpReferenceKeys, pcpSkuKeys]);
 
   const renderCommonFilters = () => (
     <>
@@ -791,6 +973,7 @@ export default function Home() {
               onSelectReferencia={(ref) => setSelectedReferencia(ref)}
               limiteClasseC={limiteClasseC}
               analyzedReferences={pcpAnalyzedReferences}
+              isPcpMarked={isProdutoPcpMarked}
               diretoriaReferences={diretoriaSavedReferences}
               approvedReferences={approvedReferences}
               onQuickClearReferencia={clearPcpReferencia}
@@ -833,13 +1016,22 @@ export default function Home() {
             Mostrar aprovados
           </label>
         </div>
-        <button
-          onClick={clearAllDiretoriaFlags}
-          disabled={diretoriaFlags.length === 0 || clearingDiretoria}
-          className="px-3 py-2 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {clearingDiretoria ? 'Desfazendo...' : 'Desfazer tudo da diretoria'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={approveAllDiretoriaVisible}
+            disabled={!hasDiretoriaBulkApprovalTarget || approvingAllDiretoria || clearingDiretoria}
+            className="px-3 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {approvingAllDiretoria ? 'Aprovando...' : 'Aprovar todos'}
+          </button>
+          <button
+            onClick={clearAllDiretoriaFlags}
+            disabled={diretoriaFlags.length === 0 || clearingDiretoria || approvingAllDiretoria}
+            className="px-3 py-2 bg-gray-700 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {clearingDiretoria ? 'Desfazendo...' : 'Desfazer tudo da diretoria'}
+          </button>
+        </div>
       </div>
 
       {!loading && !error && (
@@ -863,6 +1055,7 @@ export default function Home() {
               onSelectReferencia={(ref) => setSelectedReferencia(ref)}
               limiteClasseC={limiteClasseC}
               analyzedReferences={pcpAnalyzedReferences}
+              isPcpMarked={isProdutoPcpMarked}
               diretoriaReferences={diretoriaSavedReferences}
               approvedReferences={approvedReferences}
             />

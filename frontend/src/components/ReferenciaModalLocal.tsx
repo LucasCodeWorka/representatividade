@@ -115,9 +115,14 @@ export default function ReferenciaModalLocal({
   useEffect(() => {
     if (!referencia) return;
 
+    console.log('[MODAL] Rehidratando modal para referência:', referencia, 'mode:', mode);
+    console.log('[MODAL] Total de flags recebidas:', flags.length);
+
     const flagsAtivos = flags.filter(
       (flag) => flag.status !== 'rejeitado' && flag.referencia === referencia
     );
+    console.log('[MODAL] Flags ativas para esta referência:', flagsAtivos.length);
+
     const referenciaFlags =
       mode === 'DIRETORIA'
         ? (() => {
@@ -128,6 +133,8 @@ export default function ReferenciaModalLocal({
           })()
         : flagsAtivos.filter((flag) => flag.stage === 'PCP');
 
+    console.log('[MODAL] Flags para rehidratação:', referenciaFlags.length);
+
     const initialReference = referenciaFlags.some((flag) => flag.targetType === 'REFERENCIA');
     const initialColors = referenciaFlags
       .filter((flag) => flag.targetType === 'COR' && flag.cor)
@@ -135,6 +142,15 @@ export default function ReferenciaModalLocal({
     const initialSkus = referenciaFlags
       .filter((flag) => flag.targetType === 'SKU' && flag.cd_produto !== null)
       .map((flag) => Number(flag.cd_produto));
+
+    console.log('[MODAL] Rehidratação:', {
+      initialReference,
+      initialColorsCount: initialColors.length,
+      initialSkusCount: initialSkus.length,
+      initialSkus: initialSkus,
+      flagsSkuRaw: referenciaFlags.filter(f => f.targetType === 'SKU').map(f => ({ id: f.id, cd_produto: f.cd_produto, type: typeof f.cd_produto }))
+    });
+
     const hasAnySavedAnalysis = referenciaFlags.length > 0;
     const shouldFallbackToReference =
       hasAnySavedAnalysis &&
@@ -216,7 +232,7 @@ export default function ReferenciaModalLocal({
       if (!exists) {
         const skuIdsDaCor = skusDaReferencia
           .filter((sku) => (sku.cor || '-') === cor)
-          .map((sku) => sku.cd_produto);
+          .map((sku) => Number(sku.cd_produto));
         setSelectedSkuIds((skuIds) => skuIds.filter((id) => !skuIdsDaCor.includes(id)));
       }
 
@@ -226,11 +242,12 @@ export default function ReferenciaModalLocal({
 
   const toggleSku = (produto: Produto) => {
     if (selectedReference || selectedColors.includes(produto.cor || '-')) return;
+    const skuId = Number(produto.cd_produto);
 
     setSelectedSkuIds((current) =>
-      current.includes(produto.cd_produto)
-        ? current.filter((id) => id !== produto.cd_produto)
-        : [...current, produto.cd_produto]
+      current.includes(skuId)
+        ? current.filter((id) => id !== skuId)
+        : [...current, skuId]
     );
   };
 
@@ -383,7 +400,7 @@ export default function ReferenciaModalLocal({
                       <td className="px-4 py-3 text-center">
                         <input
                           type="checkbox"
-                          checked={selectedSkuIds.includes(sku.cd_produto)}
+                          checked={selectedSkuIds.includes(Number(sku.cd_produto))}
                           disabled={disabled}
                           onChange={() => toggleSku(sku)}
                           className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500 disabled:opacity-40"
@@ -481,7 +498,7 @@ export default function ReferenciaModalLocal({
                           <td className="px-4 py-2 text-center">
                             <input
                               type="checkbox"
-                              checked={selectedSkuIds.includes(sku.cd_produto)}
+                              checked={selectedSkuIds.includes(Number(sku.cd_produto))}
                               disabled={disabled}
                               onChange={() => toggleSku(sku)}
                               className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500 disabled:opacity-40"
