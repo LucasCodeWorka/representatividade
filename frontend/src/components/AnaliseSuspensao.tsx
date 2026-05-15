@@ -100,10 +100,11 @@ function ReferenciaRow({
           const pctValor = total > 0 && mesTotal.vl_total > 0 ? (total / mesTotal.vl_total) * 100 : 0;
           const pctQtd = pctQtdPorMes[mes] ?? 0;
 
+          // Compara cada mês pós-corte contra o mês de corte (não o mês anterior)
           let variacaoPct: number | null = null;
-          if (isDepois && idx > 0) {
-            const prevPct = pctQtdPorMes[meses[idx - 1]] ?? 0;
-            if (prevPct > 0) variacaoPct = ((pctQtd - prevPct) / prevPct) * 100;
+          if (isDepois) {
+            const corteQtd = pctQtdPorMes[corteYearMonth] ?? 0;
+            if (corteQtd > 0) variacaoPct = ((pctQtd - corteQtd) / corteQtd) * 100;
           }
           const showFlag = variacaoPct !== null && Math.abs(variacaoPct) > 10;
 
@@ -143,6 +144,7 @@ function ReferenciaRow({
 }
 
 type FiltroVariacao = 'todos' | 'sobe' | 'cai';
+type SortDir = 'asc' | 'desc';
 
 export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspensaoProps) {
   const [dataCorte, setDataCorte] = useState(`${ano}-03-31`);
@@ -158,6 +160,10 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
   const [filtroReferencia, setFiltroReferencia] = useState('');
   const [filtroVariacao, setFiltroVariacao] = useState<FiltroVariacao>('todos');
 
+  // Sorting
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
   const carregar = async () => {
     setLoading(true);
     setError(null);
@@ -167,6 +173,8 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     setFiltroGrupo('');
     setFiltroReferencia('');
     setFiltroVariacao('todos');
+    setSortCol(null);
+    setSortDir('desc');
     try {
       const resultado = await analiseApi.getComportamentoSuspensao(ano, dataCorte, selectedEmpresas);
       setData(resultado);
@@ -229,7 +237,7 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     return Array.from(set).sort();
   }, [data, filtroFamilia, filtroLinha]);
 
-  // Which references have a ↑ or ↓ flag in any month after cutoff
+  // Quais referências têm flag ↑ ou ↓ em algum mês após o corte (vs mês de corte)
   const refsComVariacao = useMemo(() => {
     const up = new Set<string>();
     const down = new Set<string>();
@@ -241,15 +249,13 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
         const mt = totalPorMes[mes] || { qt_liquida: 0 };
         pctMap[mes] = qty > 0 && mt.qt_liquida > 0 ? (qty / mt.qt_liquida) * 100 : 0;
       });
-      meses.forEach((mes, idx) => {
-        if (mes <= corteYearMonth || idx === 0) return;
-        const prev = pctMap[meses[idx - 1]] ?? 0;
+      const corteQtd = pctMap[corteYearMonth] ?? 0;
+      meses.forEach(mes => {
+        if (mes <= corteYearMonth || corteQtd <= 0) return;
         const curr = pctMap[mes] ?? 0;
-        if (prev > 0) {
-          const delta = ((curr - prev) / prev) * 100;
-          if (delta > 10) up.add(ref.referencia);
-          if (delta < -10) down.add(ref.referencia);
-        }
+        const delta = ((curr - corteQtd) / corteQtd) * 100;
+        if (delta > 10) up.add(ref.referencia);
+        if (delta < -10) down.add(ref.referencia);
       });
     });
     return { up, down };
@@ -269,6 +275,32 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     if (filtroVariacao === 'cai') refs = refs.filter(r => refsComVariacao.down.has(r.referencia));
     return refs;
   }, [data, filtroFamilia, filtroLinha, filtroGrupo, filtroReferencia, filtroVariacao, refsComVariacao]);
+
+  const handleSort = (col: string) => {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
+  };
+
+  const referenciasOrdenadas = useMemo(() => {
+    if (!sortCol) return referenciasFiltradas;
+    return [...referenciasFiltradas].sort((a, b) => {
+      if (sortCol === 'referencia') {
+        const cmp = a.referencia.localeCompare(b.referencia, 'pt-BR');
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+      if (sortCol === 'susp') {
+        return sortDir === 'asc' ? a.skusSuspensos - b.skusSuspensos : b.skusSuspensos - a.skusSuspensos;
+      }
+      // coluna de mês: ordena por vl_total
+      const va = a.meses[sortCol]?.vl_total ?? 0;
+      const vb = b.meses[sortCol]?.vl_total ?? 0;
+      return sortDir === 'asc' ? va - vb : vb - va;
+    });
+  }, [referenciasFiltradas, sortCol, sortDir]);
 
   const totalSuspVlAntes = data
     ? data.referencias.reduce((s, r) =>
@@ -470,21 +502,39 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
                 <table className="w-full">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase sticky left-0 bg-gray-50 z-10">Referencia</th>
-                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Susp/Tot</th>
+                      <th
+                        className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase sticky left-0 bg-gray-50 z-10 cursor-pointer hover:bg-gray-100 select-none"
+                        onClick={() => handleSort('referencia')}
+                      >
+                        Referencia {sortCol === 'referencia' ? (sortDir === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}
+                      </th>
+                      <th
+                        className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none"
+                        onClick={() => handleSort('susp')}
+                      >
+                        Susp/Tot {sortCol === 'susp' ? (sortDir === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}
+                      </th>
                       {meses.map(mes => (
                         <th
                           key={mes}
-                          className={`px-3 py-2 text-right text-xs font-medium uppercase ${mes <= data.corteYearMonth ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}
+                          onClick={() => handleSort(mes)}
+                          className={`px-3 py-2 text-right text-xs font-medium uppercase cursor-pointer select-none ${
+                            mes <= data.corteYearMonth
+                              ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                              : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                          } ${sortCol === mes ? 'ring-2 ring-inset ring-current' : ''}`}
                         >
                           {fmtMesLabel(mes)}
                           {mes === data.corteYearMonth && <span className="block text-[9px] font-normal">← corte</span>}
+                          <span className="block text-[9px] font-normal">
+                            {sortCol === mes ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+                          </span>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {referenciasFiltradas.map(r => (
+                    {referenciasOrdenadas.map(r => (
                       <ReferenciaRow
                         key={r.referencia}
                         item={r}
