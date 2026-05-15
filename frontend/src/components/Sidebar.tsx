@@ -15,6 +15,7 @@ export default function Sidebar({ collapsed, onToggle, activeItem, onSelectItem 
     { id: 'aprovar-retirada', label: 'Diretoria', icon: 'bar' },
     { id: 'retirada-final', label: 'Retirada Final', icon: 'trash' },
     { id: 'cenarios', label: 'Cenarios', icon: 'compare' },
+    { id: 'comportamento-suspensao', label: 'Comportamento', icon: 'pulse' },
   ];
 
   const secondaryItems = [
@@ -52,6 +53,12 @@ export default function Sidebar({ collapsed, onToggle, activeItem, onSelectItem 
         return (
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h10M7 12h6m-6 5h10M17 4l3 3-3 3M7 14l-3 3 3 3" />
+          </svg>
+        );
+      case 'pulse':
+        return (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
         );
       default:

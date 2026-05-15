@@ -258,4 +258,48 @@ export const cenariosApi = {
   }
 };
 
+export type MesDados = { qt_liquida: number; vl_total: number };
+export type MesDadosComSuspenso = MesDados & { suspensos: MesDados };
+
+export interface SkuComportamento {
+  cd_produto: number;
+  descricao: string;
+  cor: string;
+  tam: string;
+  suspenso: boolean;
+  meses: Record<string, MesDados>;
+}
+
+export interface ReferenciaComportamento {
+  referencia: string;
+  grupo: string;
+  totalSkus: number;
+  skusSuspensos: number;
+  meses: Record<string, MesDadosComSuspenso>;
+  skus: SkuComportamento[];
+}
+
+export interface ComportamentoSuspensaoResponse {
+  success: boolean;
+  referencias: ReferenciaComportamento[];
+  meses: string[];
+  corteYearMonth: string;
+  dataCorte: string;
+  totalReferencias: number;
+}
+
+export const analiseApi = {
+  async getComportamentoSuspensao(ano: number = 2026, dataCorte: string, empresas: number[] = []): Promise<ComportamentoSuspensaoResponse> {
+    const response = await api.get<ComportamentoSuspensaoResponse>('/produtos/comportamento-suspensao', {
+      params: {
+        ano,
+        dataCorte,
+        empresas: empresas.length > 0 ? empresas.join(',') : undefined
+      },
+      timeout: 300000
+    });
+    return response.data;
+  }
+};
+
 export default api;

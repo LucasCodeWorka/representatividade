@@ -124,38 +124,60 @@ const produtoService = {
     try {
       console.log('Executando query otimizada com consultas isoladas...');
 
-      // OTIMIZAÇÃO: Separar em 3 consultas pequenas e rápidas
-      const [produtosVendidos, emLinha, edicaoLimitada] = await Promise.all([
-        // 1. Produtos vendidos (SEM função)
-        pool.query(`
-          SELECT DISTINCT cd_produto
-          FROM vr_tra_transitem
-          WHERE dt_transacao >= $1
-        `, [dataInicio]),
+      // Passo 1: Produtos vendidos (SEM função — rápido)
+      const produtosVendidos = await pool.query(`
+        SELECT DISTINCT cd_produto
+        FROM vr_tra_transitem
+        WHERE dt_transacao >= $1
+      `, [dataInicio]);
 
-        // 2. Classificação "EM LINHA" (função isolada)
+      const vendidosArray = produtosVendidos.rows.map(r => r.cd_produto);
+      const vendidosSet = new Set(vendidosArray);
+
+      // Passo 2: Classificações apenas dos produtos vendidos (muito menor universo)
+      const [emLinha, emLinhaNaoComprarMp, edicaoLimitada, suspensos] = await Promise.all([
         pool.query(`
           SELECT cd_produto
           FROM vr_prd_prdgrade
-          WHERE f_dic_prd_classificacao(cd_produto, 'DS', 27) = 'EM LINHA'
-        `),
+          WHERE cd_produto = ANY($1)
+            AND f_dic_prd_classificacao(cd_produto, 'DS', 27) = 'EM LINHA'
+        `, [vendidosArray]),
 
-        // 3. Classificação "EDICAO LIMITADA" (função isolada)
         pool.query(`
           SELECT cd_produto
           FROM vr_prd_prdgrade
-          WHERE f_dic_prd_classificacao(cd_produto, 'DS', 802) = 'EDICAO LIMITADA'
-        `)
+          WHERE cd_produto = ANY($1)
+            AND f_dic_prd_classificacao(cd_produto, 'DS', 27) = 'EM LINHA NAO COMPRAR MP'
+        `, [vendidosArray]),
+
+        pool.query(`
+          SELECT cd_produto
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+            AND f_dic_prd_classificacao(cd_produto, 'DS', 802) = 'EDICAO LIMITADA'
+        `, [vendidosArray]),
+
+        pool.query(`
+          SELECT cd_produto
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+            AND f_dic_prd_classificacao(cd_produto, 'CD', 124) = '007'
+        `, [vendidosArray])
       ]);
 
-      // JOIN em memória (muito mais rápido)
-      const vendidosSet = new Set(produtosVendidos.rows.map(r => r.cd_produto));
+      // JOIN em memória
       const emLinhaSet = new Set(emLinha.rows.map(r => r.cd_produto));
+      const emLinhaNaoComprarSet = new Set(emLinhaNaoComprarMp.rows.map(r => r.cd_produto));
       const edicaoLimitadaSet = new Set(edicaoLimitada.rows.map(r => r.cd_produto));
+      const suspensoSet = new Set(suspensos.rows.map(r => r.cd_produto));
 
-      const produtosFiltrados = Array.from(vendidosSet).filter(cd =>
-        emLinhaSet.has(cd) && !edicaoLimitadaSet.has(cd)
-      );
+      // Regra: EM LINHA sempre entra; EM LINHA NAO COMPRAR MP só entra se também for suspenso
+      const produtosFiltrados = Array.from(vendidosSet).filter(cd => {
+        if (edicaoLimitadaSet.has(cd)) return false;
+        if (emLinhaSet.has(cd)) return true;
+        if (emLinhaNaoComprarSet.has(cd) && suspensoSet.has(cd)) return true;
+        return false;
+      });
 
       // Atualiza cache
       classificacaoCache = {
@@ -634,6 +656,191 @@ const produtoService = {
       console.error('Erro ao buscar SKUs por referência:', error);
       throw error;
     }
+  },
+
+  /**
+   * Análise de comportamento de referências com SKUs suspensos (antes vs depois do corte)
+   */
+  async getComportamentoSuspensao(ano = 2026, dataCorte, empresas = []) {
+    const dataInicio = `${ano}-01-01`;
+    const dataCorteStr = dataCorte || `${ano}-03-31`;
+    const hoje = new Date().toISOString().slice(0, 10);
+    const empresasSel = this.normalizeEmpresaIds(empresas);
+    const usarFiltroEmpresas = empresasSel.length > 0;
+
+    console.log(`[SUSPENSAO] Buscando análise (corte: ${dataCorteStr}, empresas: ${usarFiltroEmpresas ? empresasSel.join(',') : 'all'})`);
+
+    // 1. Produtos com vendas no ano (sem função — rápido)
+    const vendidosResult = await pool.query(
+      `SELECT DISTINCT cd_produto FROM vr_tra_transitem WHERE dt_transacao >= $1`,
+      [dataInicio]
+    );
+    const vendidosArray = vendidosResult.rows.map(r => r.cd_produto);
+    if (vendidosArray.length === 0) return { referencias: [], meses: [], corteYearMonth: dataCorteStr.slice(0, 7), dataCorte: dataCorteStr, totalReferencias: 0 };
+
+    console.log(`[SUSPENSAO] ${vendidosArray.length} produtos com vendas`);
+
+    // 2. Detalhes de todos os vendidos (referência, grupo, suspenso)
+    const detalhesMap = await this.getDetalhesProdutos(vendidosArray);
+
+    // 3. Referências que têm ao menos 1 SKU suspenso
+    const refComSuspenso = new Set();
+    detalhesMap.forEach((detalhe) => {
+      if (detalhe.suspenso && detalhe.referencia && detalhe.referencia !== 'SEM REF') {
+        refComSuspenso.add(detalhe.referencia);
+      }
+    });
+
+    console.log(`[SUSPENSAO] ${refComSuspenso.size} referências com suspenso`);
+    if (refComSuspenso.size === 0) return { referencias: [], meses: [], corteYearMonth: dataCorteStr.slice(0, 7), dataCorte: dataCorteStr, totalReferencias: 0 };
+
+    // 4. SKUs pertencentes a essas referências
+    const skusNasRefs = vendidosArray.filter(cd => {
+      const d = detalhesMap.get(Number(cd));
+      return d && refComSuspenso.has(d.referencia);
+    });
+
+    console.log(`[SUSPENSAO] ${skusNasRefs.length} SKUs nas referências`);
+
+    // 5. Vendas mensais para esses SKUs (2 queries: transações + pedidos)
+    const params = usarFiltroEmpresas ? [skusNasRefs, dataInicio, empresasSel] : [skusNasRefs, dataInicio];
+    const empTrans = usarFiltroEmpresas ? 'AND T.cd_empresa = ANY($3)' : '';
+    const empPed   = usarFiltroEmpresas ? 'AND 1 = ANY($3)' : '';
+
+    const [transResult, pedResult] = await Promise.all([
+      pool.query(`
+        SELECT i.cd_produto,
+          TO_CHAR(DATE_TRUNC('month', i.dt_transacao), 'YYYY-MM') AS mes,
+          SUM(i.qt_solicitada * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS qt_liquida,
+          SUM(i.vl_totalliquido * CASE WHEN T.tp_modalidade = '3' THEN -1 ELSE 1 END) AS vl_total
+        FROM vr_tra_transacao T
+        JOIN vr_tra_transitem i ON T.nr_transacao = i.nr_transacao AND T.cd_empresa = i.cd_empresa
+        WHERE T.cd_empresa <> 1 ${empTrans}
+          AND i.cd_produto = ANY($1)
+          AND i.dt_transacao >= $2
+          AND T.cd_operacao NOT IN (140,76,25,26,27,273,44,240,241,242,243,244,245,239,238,237,236)
+          AND i.cd_compvend <> 1 AND T.tp_situacao <> 6 AND T.tp_modalidade IN ('3','4')
+        GROUP BY i.cd_produto, DATE_TRUNC('month', i.dt_transacao)
+      `, params),
+
+      pool.query(`
+        SELECT i.cd_produto,
+          TO_CHAR(DATE_TRUNC('month', C.dt_pedido), 'YYYY-MM') AS mes,
+          SUM(i.qt_solicitada) AS qt_liquida,
+          SUM(i.vl_solicitado) AS vl_total
+        FROM vr_ped_pedidoc2 C
+        LEFT JOIN vr_ped_pedidoi i ON C.cd_empresa = i.cd_empresa AND i.cd_pedido = C.cd_pedido
+        WHERE C.dt_pedido >= $2
+          AND i.cd_produto = ANY($1)
+          AND C.cd_cliente <> 110000001 AND C.cd_representant <> 32098
+          AND C.tp_situacao <> 6 AND C.cd_empresa = 1 ${empPed}
+          AND C.cd_operacao IN (1,18,52,166,148,98,55,97,30,79,93,137,141,142,156,159,310,598,180,58,69,85,124,182)
+        GROUP BY i.cd_produto, DATE_TRUNC('month', C.dt_pedido)
+      `, params)
+    ]);
+
+    // 6. Agregar por SKU + mês
+    const vendasPorSkuMes = new Map();
+    const todosOsMesesSet = new Set();
+
+    [...transResult.rows, ...pedResult.rows].forEach(row => {
+      const cd = Number(row.cd_produto);
+      if (!vendasPorSkuMes.has(cd)) vendasPorSkuMes.set(cd, new Map());
+      const mesMap = vendasPorSkuMes.get(cd);
+      const atual = mesMap.get(row.mes) || { qt_liquida: 0, vl_total: 0 };
+      mesMap.set(row.mes, {
+        qt_liquida: atual.qt_liquida + parseFloat(row.qt_liquida || 0),
+        vl_total: atual.vl_total + parseFloat(row.vl_total || 0)
+      });
+      todosOsMesesSet.add(row.mes);
+    });
+
+    const mesesOrdenados = Array.from(todosOsMesesSet).sort();
+    const corteYearMonth = dataCorteStr.slice(0, 7); // ex: '2026-03'
+
+    // 7. Agrupar por referência
+    const refsMap = new Map();
+    skusNasRefs.forEach(cd => {
+      const cdNum = Number(cd);
+      const d = detalhesMap.get(cdNum) || {};
+      const ref = d.referencia || 'SEM REF';
+      const isSuspenso = Boolean(d.suspenso);
+      const skuMeses = vendasPorSkuMes.get(cdNum) || new Map();
+
+      if (!refsMap.has(ref)) {
+        refsMap.set(ref, {
+          referencia: ref, grupo: d.grupo || '-',
+          totalSkus: 0, skusSuspensos: 0,
+          meses: {}, skus: []
+        });
+      }
+
+      const r = refsMap.get(ref);
+      r.totalSkus++;
+      if (isSuspenso) r.skusSuspensos++;
+
+      const skuMesesData = {};
+      mesesOrdenados.forEach(mes => {
+        const v = skuMeses.get(mes) || { qt_liquida: 0, vl_total: 0 };
+        if (!r.meses[mes]) {
+          r.meses[mes] = { qt_liquida: 0, vl_total: 0, suspensos: { qt_liquida: 0, vl_total: 0 } };
+        }
+        r.meses[mes].qt_liquida += v.qt_liquida;
+        r.meses[mes].vl_total += v.vl_total;
+        if (isSuspenso) {
+          r.meses[mes].suspensos.qt_liquida += v.qt_liquida;
+          r.meses[mes].suspensos.vl_total += v.vl_total;
+        }
+        skuMesesData[mes] = {
+          qt_liquida: Math.round(v.qt_liquida),
+          vl_total: Math.round(v.vl_total * 100) / 100
+        };
+      });
+
+      r.skus.push({
+        cd_produto: cdNum,
+        descricao: d.descricao || '-',
+        cor: d.cor || '-',
+        tam: d.tam || '-',
+        suspenso: isSuspenso,
+        meses: skuMesesData
+      });
+    });
+
+    // 8. Formatar e ordenar por valor dos suspensos antes do corte
+    const referencias = Array.from(refsMap.values()).map(r => ({
+      referencia: r.referencia,
+      grupo: r.grupo,
+      totalSkus: r.totalSkus,
+      skusSuspensos: r.skusSuspensos,
+      meses: Object.fromEntries(
+        Object.entries(r.meses).map(([mes, v]) => [mes, {
+          qt_liquida: Math.round(v.qt_liquida),
+          vl_total: Math.round(v.vl_total * 100) / 100,
+          suspensos: {
+            qt_liquida: Math.round(v.suspensos.qt_liquida),
+            vl_total: Math.round(v.suspensos.vl_total * 100) / 100
+          }
+        }])
+      ),
+      skus: r.skus.sort((a, b) => {
+        const somaA = mesesOrdenados.filter(m => m <= corteYearMonth).reduce((s, m) => s + (a.meses[m]?.vl_total || 0), 0);
+        const somaB = mesesOrdenados.filter(m => m <= corteYearMonth).reduce((s, m) => s + (b.meses[m]?.vl_total || 0), 0);
+        return somaB - somaA;
+      })
+    })).sort((a, b) => {
+      const somaA = mesesOrdenados.filter(m => m <= corteYearMonth).reduce((s, m) => s + (a.meses[m]?.suspensos?.vl_total || 0), 0);
+      const somaB = mesesOrdenados.filter(m => m <= corteYearMonth).reduce((s, m) => s + (b.meses[m]?.suspensos?.vl_total || 0), 0);
+      return somaB - somaA;
+    });
+
+    return {
+      referencias,
+      meses: mesesOrdenados,
+      corteYearMonth,
+      dataCorte: dataCorteStr,
+      totalReferencias: referencias.length
+    };
   },
 
   /**

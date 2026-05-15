@@ -42,6 +42,7 @@ export default function ProductTable({
   const [filterClass, setFilterClass] = useState<'all' | 'A' | 'B' | 'C'>('all');
   const [filterGrupo, setFilterGrupo] = useState<string>('all');
   const [filterMacroGrupo, setFilterMacroGrupo] = useState<'all' | MacroGrupo>('all');
+  const [showOnlySuspenso, setShowOnlySuspenso] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
 
@@ -145,6 +146,11 @@ export default function ProductTable({
       result = result.filter(p => p.grupo === filterGrupo);
     }
 
+    // Filtro suspensos
+    if (showOnlySuspenso) {
+      result = result.filter(p => p.suspenso === true);
+    }
+
     // Ordenação
     result.sort((a: ProdutoComMacro, b: ProdutoComMacro) => {
       const aVal = a[sortField];
@@ -158,7 +164,7 @@ export default function ProductTable({
     });
 
     return result;
-  }, [produtos, searchTerm, filterClass, filterGrupo, filterMacroGrupo, sortField, sortOrder]);
+  }, [produtos, searchTerm, filterClass, filterGrupo, filterMacroGrupo, showOnlySuspenso, sortField, sortOrder]);
 
   const totalPages = Math.ceil(filteredAndSorted.length / itemsPerPage);
   const paginatedData = filteredAndSorted.slice(
@@ -173,7 +179,8 @@ export default function ProductTable({
     const skusClasseA = filteredAndSorted.filter(p => p.classificacao === 'A').length;
     const skusClasseB = filteredAndSorted.filter(p => p.classificacao === 'B').length;
     const skusClasseC = filteredAndSorted.filter(p => p.classificacao === 'C').length;
-    return { totalSkus, skusClasseA, skusClasseB, skusClasseC };
+    const skusSuspensos = filteredAndSorted.filter(p => p.suspenso === true).length;
+    return { totalSkus, skusClasseA, skusClasseB, skusClasseC, skusSuspensos };
   }, [filteredAndSorted]);
 
   useEffect(() => {
@@ -241,6 +248,15 @@ export default function ProductTable({
             <option value="B">Classe B (80-{limiteClasseC}%)</option>
             <option value="C">Classe C ({limiteClasseC}-100%) - Candidatos</option>
           </select>
+          <label className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg cursor-pointer select-none hover:bg-gray-50">
+            <input
+              type="checkbox"
+              checked={showOnlySuspenso}
+              onChange={(e) => { setShowOnlySuspenso(e.target.checked); setCurrentPage(1); }}
+              className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+            />
+            <span className="text-sm text-gray-700 whitespace-nowrap">Apenas suspensos</span>
+          </label>
         </div>
 
         {/* Estatisticas */}
@@ -257,6 +273,15 @@ export default function ProductTable({
           <span className="text-red-600">
             <strong>{stats.skusClasseC}</strong> classe C
           </span>
+          {stats.skusSuspensos > 0 && (
+            <button
+              type="button"
+              onClick={() => { setShowOnlySuspenso(v => !v); setCurrentPage(1); }}
+              className={`font-semibold transition-colors ${showOnlySuspenso ? 'text-gray-900 underline' : 'text-gray-500 hover:text-gray-900'}`}
+            >
+              <strong>{stats.skusSuspensos}</strong> suspensos
+            </button>
+          )}
         </div>
       </div>
 

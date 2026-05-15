@@ -20,6 +20,7 @@ import ProductTable from '@/components/ProductTable';
 import FilterPanel from '@/components/FilterPanel';
 import ReferenciaModalLocal from '@/components/ReferenciaModalLocal';
 import ScenarioComparison from '@/components/ScenarioComparison';
+import AnaliseSuspensao from '@/components/AnaliseSuspensao';
 import { useNavigation } from '@/components/NavigationContext';
 
 type SaveSelectionsPayload = {
@@ -378,6 +379,11 @@ export default function Home() {
 
     return base.filter((produto) => isProdutoPcpMarked(produto));
   }, [isProdutoPcpMarked, produtosFiltrados, showOnlyPcpSavedInPcp]);
+
+  const totalSuspensos = useMemo(
+    () => produtos.filter((p) => p.suspenso === true).length,
+    [produtos]
+  );
 
   const pcpMarkedProdutos = useMemo(
     () => produtosComClassificacao.filter((produto) => isProdutoPcpMarked(produto)),
@@ -1043,6 +1049,7 @@ export default function Home() {
             <MetricCard compact title="Qtd Marcada" value={pcpMarkedTotals.totalQtd.toLocaleString('pt-BR')} subtitle={`${pcpMarkedTotals.totalSkus.toLocaleString('pt-BR')} SKUs marcados`} color="red" icon="box" />
             <MetricCard compact title="Valor Marcado" value={`R$ ${pcpMarkedTotals.totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} subtitle="Valor total dos SKUs marcados" color="red" icon="money" />
             <MetricCard compact title="Refs PCP" value={pcpAnalyzedReferences.size.toLocaleString('pt-BR')} subtitle="Ja analisadas pelo PCP" color="red" icon="warning" />
+            <MetricCard compact title="SKUs Suspensos" value={totalSuspensos.toLocaleString('pt-BR')} subtitle="Na base carregada" color="blue" icon="warning" />
           </div>
 
           <div>
@@ -1307,6 +1314,9 @@ export default function Home() {
             currentScenarioSummary={currentPcpScenarioSummary}
             baseTotalValor={metricas?.totalValor || 0}
           />
+        )}
+        {!error && activeSection === 'comportamento-suspensao' && (
+          <AnaliseSuspensao ano={ano} selectedEmpresas={selectedEmpresas} />
         )}
         {!error && activeSection === 'pareto' && (
           <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">

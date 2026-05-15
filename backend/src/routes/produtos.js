@@ -164,6 +164,24 @@ router.post('/cache/limpar', (req, res) => {
   res.json({ success: true, message: 'Cache limpo com sucesso' });
 });
 
+// GET /api/produtos/comportamento-suspensao
+router.get('/comportamento-suspensao', async (req, res) => {
+  try {
+    const ano = parseInt(req.query.ano) || 2026;
+    const dataCorte = req.query.dataCorte || `${ano}-03-31`;
+    const empresas = typeof req.query.empresas === 'string' && req.query.empresas.trim() !== ''
+      ? req.query.empresas.split(',').map(e => parseInt(e, 10)).filter(Number.isInteger)
+      : [];
+
+    console.log(`[SUSPENSAO] ano=${ano} corte=${dataCorte} empresas=${empresas.join(',') || 'all'}`);
+    const resultado = await produtoService.getComportamentoSuspensao(ano, dataCorte, empresas);
+    res.json({ success: true, ...resultado });
+  } catch (error) {
+    console.error('Erro no endpoint comportamento-suspensao:', error);
+    res.status(500).json({ success: false, error: 'Erro ao buscar comportamento de suspensao', message: error.message });
+  }
+});
+
 // POST /api/produtos/cache/force-reload
 // Força recalculo IMEDIATO sem usar cache
 router.post('/cache/force-reload', async (req, res) => {
