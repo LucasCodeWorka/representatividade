@@ -76,6 +76,11 @@ function ReferenciaRow({
             <div>
               <span className="text-sm font-semibold text-rose-600">{item.referencia}</span>
               <span className="ml-2 text-xs text-gray-400">{item.grupo}</span>
+              {(item.familia || item.linha) && (
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  {[item.familia, item.linha].filter(Boolean).join(' · ')}
+                </div>
+              )}
             </div>
           </div>
         </td>
@@ -147,6 +152,8 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
   const [expandedRefs, setExpandedRefs] = useState<Set<string>>(new Set());
 
   // Filters
+  const [filtroFamilia, setFiltroFamilia] = useState('');
+  const [filtroLinha, setFiltroLinha] = useState('');
   const [filtroGrupo, setFiltroGrupo] = useState('');
   const [filtroReferencia, setFiltroReferencia] = useState('');
   const [filtroVariacao, setFiltroVariacao] = useState<FiltroVariacao>('todos');
@@ -155,6 +162,8 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     setLoading(true);
     setError(null);
     setExpandedRefs(new Set());
+    setFiltroFamilia('');
+    setFiltroLinha('');
     setFiltroGrupo('');
     setFiltroReferencia('');
     setFiltroVariacao('todos');
@@ -193,12 +202,32 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     return totals;
   }, [data, meses]);
 
-  // Unique grupos for dropdown
-  const grupos = useMemo(() => {
+  // Unique values for dropdowns
+  const familias = useMemo(() => {
     const set = new Set<string>();
-    (data?.referencias ?? []).forEach(r => { if (r.grupo && r.grupo !== '-') set.add(r.grupo); });
+    (data?.referencias ?? []).forEach(r => { if (r.familia) set.add(r.familia); });
     return Array.from(set).sort();
   }, [data]);
+
+  const linhas = useMemo(() => {
+    const set = new Set<string>();
+    (data?.referencias ?? []).forEach(r => {
+      if (!filtroFamilia || r.familia === filtroFamilia) {
+        if (r.linha) set.add(r.linha);
+      }
+    });
+    return Array.from(set).sort();
+  }, [data, filtroFamilia]);
+
+  const grupos = useMemo(() => {
+    const set = new Set<string>();
+    (data?.referencias ?? []).forEach(r => {
+      if ((!filtroFamilia || r.familia === filtroFamilia) && (!filtroLinha || r.linha === filtroLinha)) {
+        if (r.grupo && r.grupo !== '-') set.add(r.grupo);
+      }
+    });
+    return Array.from(set).sort();
+  }, [data, filtroFamilia, filtroLinha]);
 
   // Which references have a ↑ or ↓ flag in any month after cutoff
   const refsComVariacao = useMemo(() => {
@@ -229,6 +258,8 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
   // Apply all filters
   const referenciasFiltradas = useMemo(() => {
     let refs = data?.referencias ?? [];
+    if (filtroFamilia) refs = refs.filter(r => r.familia === filtroFamilia);
+    if (filtroLinha) refs = refs.filter(r => r.linha === filtroLinha);
     if (filtroGrupo) refs = refs.filter(r => r.grupo === filtroGrupo);
     if (filtroReferencia.trim()) {
       const q = filtroReferencia.trim().toLowerCase();
@@ -237,14 +268,14 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     if (filtroVariacao === 'sobe') refs = refs.filter(r => refsComVariacao.up.has(r.referencia));
     if (filtroVariacao === 'cai') refs = refs.filter(r => refsComVariacao.down.has(r.referencia));
     return refs;
-  }, [data, filtroGrupo, filtroReferencia, filtroVariacao, refsComVariacao]);
+  }, [data, filtroFamilia, filtroLinha, filtroGrupo, filtroReferencia, filtroVariacao, refsComVariacao]);
 
   const totalSuspVlAntes = data
     ? data.referencias.reduce((s, r) =>
         s + meses.filter(m => m <= corteYearMonth).reduce((ms, m) => ms + (r.meses[m]?.suspensos?.vl_total ?? 0), 0), 0)
     : 0;
 
-  const temFiltroAtivo = filtroGrupo !== '' || filtroReferencia.trim() !== '' || filtroVariacao !== 'todos';
+  const temFiltroAtivo = filtroFamilia !== '' || filtroLinha !== '' || filtroGrupo !== '' || filtroReferencia.trim() !== '' || filtroVariacao !== 'todos';
 
   return (
     <div className="space-y-6">
@@ -320,18 +351,46 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
 
           {/* Filtros */}
           <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-wrap items-center gap-3">
-            {/* Grupo / Família */}
+            {/* Família */}
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Familia/Grupo</label>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Familia</label>
+              <select
+                value={filtroFamilia}
+                onChange={e => { setFiltroFamilia(e.target.value); setFiltroLinha(''); setFiltroGrupo(''); }}
+                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 min-w-[140px]"
+              >
+                <option value="">Todas</option>
+                {familias.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+
+            <div className="h-5 w-px bg-gray-200" />
+
+            {/* Linha */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Linha</label>
+              <select
+                value={filtroLinha}
+                onChange={e => { setFiltroLinha(e.target.value); setFiltroGrupo(''); }}
+                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 min-w-[140px]"
+              >
+                <option value="">Todas</option>
+                {linhas.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+
+            <div className="h-5 w-px bg-gray-200" />
+
+            {/* Grupo */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Grupo</label>
               <select
                 value={filtroGrupo}
                 onChange={e => setFiltroGrupo(e.target.value)}
-                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 min-w-[160px]"
+                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 min-w-[140px]"
               >
                 <option value="">Todos</option>
-                {grupos.map(g => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
+                {grupos.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
 
@@ -345,7 +404,7 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
                 placeholder="Buscar..."
                 value={filtroReferencia}
                 onChange={e => setFiltroReferencia(e.target.value)}
-                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 w-32"
+                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 w-28"
               />
             </div>
 
@@ -384,7 +443,7 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
               <>
                 <div className="h-5 w-px bg-gray-200" />
                 <button
-                  onClick={() => { setFiltroGrupo(''); setFiltroReferencia(''); setFiltroVariacao('todos'); }}
+                  onClick={() => { setFiltroFamilia(''); setFiltroLinha(''); setFiltroGrupo(''); setFiltroReferencia(''); setFiltroVariacao('todos'); }}
                   className="text-xs text-rose-600 hover:text-rose-800 font-medium"
                 >
                   Limpar filtros

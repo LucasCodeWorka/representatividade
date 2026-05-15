@@ -303,8 +303,8 @@ const produtoService = {
 
     try {
       // OTIMIZAÇÃO: Consultas isoladas em paralelo (mais rápido que funções no SELECT)
-      const [detalhesBasicos, referencias, grupos, suspensos] = await Promise.all([
-        // 1. Dados básicos do produto (SEM funções) - COALESCE para evitar NULL
+      const [detalhesBasicos, referencias, grupos, suspensos, familias, linhas] = await Promise.all([
+        // 1. Dados básicos do produto (SEM funções)
         pool.query(`
           SELECT cd_produto,
                  COALESCE(nm_produto, 'SEM DESCRICAO') AS descricao,
@@ -314,24 +314,38 @@ const produtoService = {
           WHERE cd_produto = ANY($1)
         `, [cdProdutos]),
 
-        // 2. Referências (função isolada) - COALESCE para evitar NULL
+        // 2. Referências
         pool.query(`
           SELECT cd_produto, COALESCE(f_dic_prd_nivel(cd_produto, 'CD'), 'SEM REF') AS referencia
           FROM vr_prd_prdgrade
           WHERE cd_produto = ANY($1)
         `, [cdProdutos]),
 
-        // 3. Grupos (função isolada) - COALESCE para evitar NULL
+        // 3. Grupos (código 25)
         pool.query(`
           SELECT cd_produto, COALESCE(f_dic_prd_classificacao(cd_produto, 'DS', 25), 'SEM GRUPO') AS grupo
           FROM vr_prd_prdgrade
           WHERE cd_produto = ANY($1)
         `, [cdProdutos]),
 
-        // 4. Suspensos (função isolada)
+        // 4. Suspensos (código 124)
         pool.query(`
           SELECT cd_produto,
             CASE WHEN f_dic_prd_classificacao(cd_produto, 'CD', 124) = '007' THEN true ELSE false END AS suspenso
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+        `, [cdProdutos]),
+
+        // 5. Família (código 24)
+        pool.query(`
+          SELECT cd_produto, COALESCE(f_dic_prd_classificacao(cd_produto, 'DS', 24), '') AS familia
+          FROM vr_prd_prdgrade
+          WHERE cd_produto = ANY($1)
+        `, [cdProdutos]),
+
+        // 6. Linha (código 23)
+        pool.query(`
+          SELECT cd_produto, COALESCE(f_dic_prd_classificacao(cd_produto, 'DS', 23), '') AS linha
           FROM vr_prd_prdgrade
           WHERE cd_produto = ANY($1)
         `, [cdProdutos])
@@ -342,6 +356,8 @@ const produtoService = {
       const refMap = new Map(referencias.rows.map(r => [Number(r.cd_produto), r.referencia]));
       const grupoMap = new Map(grupos.rows.map(r => [Number(r.cd_produto), r.grupo]));
       const suspensoMap = new Map(suspensos.rows.map(r => [Number(r.cd_produto), r.suspenso]));
+      const familiaMap = new Map(familias.rows.map(r => [Number(r.cd_produto), r.familia]));
+      const linhaMap = new Map(linhas.rows.map(r => [Number(r.cd_produto), r.linha]));
 
       detalhesBasicos.rows.forEach(row => {
         const cdProduto = Number(row.cd_produto);
@@ -354,6 +370,8 @@ const produtoService = {
           tam: row.tam,
           referencia: ref !== undefined && ref !== null ? ref : 'SEM REF',
           grupo: grp !== undefined && grp !== null ? grp : 'SEM GRUPO',
+          familia: familiaMap.get(cdProduto) || '',
+          linha: linhaMap.get(cdProduto) || '',
           suspenso: suspensoMap.get(cdProduto) || false
         });
       });
@@ -776,6 +794,7 @@ const produtoService = {
       if (!refsMap.has(ref)) {
         refsMap.set(ref, {
           referencia: ref, grupo: d.grupo || '-',
+          familia: d.familia || '', linha: d.linha || '',
           totalSkus: 0, skusSuspensos: 0,
           meses: {}, skus: []
         });
@@ -817,6 +836,8 @@ const produtoService = {
     const referencias = Array.from(refsMap.values()).map(r => ({
       referencia: r.referencia,
       grupo: r.grupo,
+      familia: r.familia,
+      linha: r.linha,
       totalSkus: r.totalSkus,
       skusSuspensos: r.skusSuspensos,
       meses: Object.fromEntries(

@@ -273,6 +273,8 @@ export interface SkuComportamento {
 export interface ReferenciaComportamento {
   referencia: string;
   grupo: string;
+  familia: string;
+  linha: string;
   totalSkus: number;
   skusSuspensos: number;
   meses: Record<string, MesDadosComSuspenso>;
