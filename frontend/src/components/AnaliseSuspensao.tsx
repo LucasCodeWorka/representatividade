@@ -59,7 +59,6 @@ function ReferenciaRow({
   onToggle: () => void;
   totalPorMes: Record<string, { vl_total: number; qt_liquida: number }>;
 }) {
-  // Pre-compute qty representativity per month to enable variation lookup
   const pctQtdPorMes: Record<string, number> = {};
   meses.forEach(mes => {
     const v = item.meses[mes];
@@ -96,13 +95,10 @@ function ReferenciaRow({
           const pctValor = total > 0 && mesTotal.vl_total > 0 ? (total / mesTotal.vl_total) * 100 : 0;
           const pctQtd = pctQtdPorMes[mes] ?? 0;
 
-          // Variation flag: month-over-month change in qty representativity, only after cutoff
           let variacaoPct: number | null = null;
           if (isDepois && idx > 0) {
             const prevPct = pctQtdPorMes[meses[idx - 1]] ?? 0;
-            if (prevPct > 0) {
-              variacaoPct = ((pctQtd - prevPct) / prevPct) * 100;
-            }
+            if (prevPct > 0) variacaoPct = ((pctQtd - prevPct) / prevPct) * 100;
           }
           const showFlag = variacaoPct !== null && Math.abs(variacaoPct) > 10;
 
@@ -141,6 +137,8 @@ function ReferenciaRow({
   );
 }
 
+type FiltroVariacao = 'todos' | 'sobe' | 'cai';
+
 export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspensaoProps) {
   const [dataCorte, setDataCorte] = useState(`${ano}-03-31`);
   const [loading, setLoading] = useState(false);
@@ -148,10 +146,18 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
   const [error, setError] = useState<string | null>(null);
   const [expandedRefs, setExpandedRefs] = useState<Set<string>>(new Set());
 
+  // Filters
+  const [filtroGrupo, setFiltroGrupo] = useState('');
+  const [filtroReferencia, setFiltroReferencia] = useState('');
+  const [filtroVariacao, setFiltroVariacao] = useState<FiltroVariacao>('todos');
+
   const carregar = async () => {
     setLoading(true);
     setError(null);
     setExpandedRefs(new Set());
+    setFiltroGrupo('');
+    setFiltroReferencia('');
+    setFiltroVariacao('todos');
     try {
       const resultado = await analiseApi.getComportamentoSuspensao(ano, dataCorte, selectedEmpresas);
       setData(resultado);
@@ -187,10 +193,58 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
     return totals;
   }, [data, meses]);
 
+  // Unique grupos for dropdown
+  const grupos = useMemo(() => {
+    const set = new Set<string>();
+    (data?.referencias ?? []).forEach(r => { if (r.grupo && r.grupo !== '-') set.add(r.grupo); });
+    return Array.from(set).sort();
+  }, [data]);
+
+  // Which references have a ↑ or ↓ flag in any month after cutoff
+  const refsComVariacao = useMemo(() => {
+    const up = new Set<string>();
+    const down = new Set<string>();
+    (data?.referencias ?? []).forEach(ref => {
+      const pctMap: Record<string, number> = {};
+      meses.forEach(mes => {
+        const v = ref.meses[mes];
+        const qty = v?.qt_liquida ?? 0;
+        const mt = totalPorMes[mes] || { qt_liquida: 0 };
+        pctMap[mes] = qty > 0 && mt.qt_liquida > 0 ? (qty / mt.qt_liquida) * 100 : 0;
+      });
+      meses.forEach((mes, idx) => {
+        if (mes <= corteYearMonth || idx === 0) return;
+        const prev = pctMap[meses[idx - 1]] ?? 0;
+        const curr = pctMap[mes] ?? 0;
+        if (prev > 0) {
+          const delta = ((curr - prev) / prev) * 100;
+          if (delta > 10) up.add(ref.referencia);
+          if (delta < -10) down.add(ref.referencia);
+        }
+      });
+    });
+    return { up, down };
+  }, [data, meses, corteYearMonth, totalPorMes]);
+
+  // Apply all filters
+  const referenciasFiltradas = useMemo(() => {
+    let refs = data?.referencias ?? [];
+    if (filtroGrupo) refs = refs.filter(r => r.grupo === filtroGrupo);
+    if (filtroReferencia.trim()) {
+      const q = filtroReferencia.trim().toLowerCase();
+      refs = refs.filter(r => r.referencia.toLowerCase().includes(q));
+    }
+    if (filtroVariacao === 'sobe') refs = refs.filter(r => refsComVariacao.up.has(r.referencia));
+    if (filtroVariacao === 'cai') refs = refs.filter(r => refsComVariacao.down.has(r.referencia));
+    return refs;
+  }, [data, filtroGrupo, filtroReferencia, filtroVariacao, refsComVariacao]);
+
   const totalSuspVlAntes = data
     ? data.referencias.reduce((s, r) =>
         s + meses.filter(m => m <= corteYearMonth).reduce((ms, m) => ms + (r.meses[m]?.suspensos?.vl_total ?? 0), 0), 0)
     : 0;
+
+  const temFiltroAtivo = filtroGrupo !== '' || filtroReferencia.trim() !== '' || filtroVariacao !== 'todos';
 
   return (
     <div className="space-y-6">
@@ -201,7 +255,7 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
         </p>
       </div>
 
-      {/* Controles */}
+      {/* Controles de carga */}
       <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-gray-600">Data de corte (suspensao):</label>
@@ -264,43 +318,128 @@ export default function AnaliseSuspensao({ ano, selectedEmpresas }: AnaliseSuspe
             </div>
           </div>
 
+          {/* Filtros */}
+          <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-wrap items-center gap-3">
+            {/* Grupo / Família */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Familia/Grupo</label>
+              <select
+                value={filtroGrupo}
+                onChange={e => setFiltroGrupo(e.target.value)}
+                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 min-w-[160px]"
+              >
+                <option value="">Todos</option>
+                {grupos.map(g => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="h-5 w-px bg-gray-200" />
+
+            {/* Referência */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Referencia</label>
+              <input
+                type="text"
+                placeholder="Buscar..."
+                value={filtroReferencia}
+                onChange={e => setFiltroReferencia(e.target.value)}
+                className="px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 w-32"
+              />
+            </div>
+
+            <div className="h-5 w-px bg-gray-200" />
+
+            {/* Variação */}
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Variacao qt %</label>
+              <div className="flex rounded overflow-hidden border border-gray-300 text-xs font-medium">
+                {([
+                  { key: 'todos', label: 'Todos' },
+                  { key: 'sobe', label: '↑ Sobe >10%' },
+                  { key: 'cai',  label: '↓ Cai >10%' },
+                ] as { key: FiltroVariacao; label: string }[]).map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setFiltroVariacao(opt.key)}
+                    className={`px-3 py-1.5 transition-colors ${
+                      filtroVariacao === opt.key
+                        ? opt.key === 'sobe'
+                          ? 'bg-green-600 text-white'
+                          : opt.key === 'cai'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-gray-700 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Limpar filtros */}
+            {temFiltroAtivo && (
+              <>
+                <div className="h-5 w-px bg-gray-200" />
+                <button
+                  onClick={() => { setFiltroGrupo(''); setFiltroReferencia(''); setFiltroVariacao('todos'); }}
+                  className="text-xs text-rose-600 hover:text-rose-800 font-medium"
+                >
+                  Limpar filtros
+                </button>
+              </>
+            )}
+
+            <div className="ml-auto text-xs text-gray-400">
+              {referenciasFiltradas.length === data.totalReferencias
+                ? `${data.totalReferencias} referencias`
+                : `${referenciasFiltradas.length} de ${data.totalReferencias} referencias`}
+            </div>
+          </div>
+
           {/* Tabela mensal */}
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 text-sm font-medium text-gray-700">
-              {data.totalReferencias} referencia(s) — valor total da referencia por mes (em cinza: contribuicao dos suspensos)
+              {referenciasFiltradas.length} referencia(s) — valor total da referencia por mes · % representatividade · flag de variacao &gt;10% apos suspensao
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase sticky left-0 bg-gray-50 z-10">Referencia</th>
-                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Susp/Tot</th>
-                    {meses.map(mes => (
-                      <th
-                        key={mes}
-                        className={`px-3 py-2 text-right text-xs font-medium uppercase ${mes <= data.corteYearMonth ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}
-                      >
-                        {fmtMesLabel(mes)}
-                        {mes === data.corteYearMonth && <span className="block text-[9px] font-normal">← corte</span>}
-                      </th>
+            {referenciasFiltradas.length === 0 ? (
+              <div className="p-10 text-center text-gray-400 text-sm">Nenhuma referencia corresponde aos filtros aplicados.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase sticky left-0 bg-gray-50 z-10">Referencia</th>
+                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Susp/Tot</th>
+                      {meses.map(mes => (
+                        <th
+                          key={mes}
+                          className={`px-3 py-2 text-right text-xs font-medium uppercase ${mes <= data.corteYearMonth ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}
+                        >
+                          {fmtMesLabel(mes)}
+                          {mes === data.corteYearMonth && <span className="block text-[9px] font-normal">← corte</span>}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {referenciasFiltradas.map(r => (
+                      <ReferenciaRow
+                        key={r.referencia}
+                        item={r}
+                        meses={meses}
+                        corteYearMonth={corteYearMonth}
+                        expanded={expandedRefs.has(r.referencia)}
+                        onToggle={() => toggleRef(r.referencia)}
+                        totalPorMes={totalPorMes}
+                      />
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.referencias.map(r => (
-                    <ReferenciaRow
-                      key={r.referencia}
-                      item={r}
-                      meses={meses}
-                      corteYearMonth={corteYearMonth}
-                      expanded={expandedRefs.has(r.referencia)}
-                      onToggle={() => toggleRef(r.referencia)}
-                      totalPorMes={totalPorMes}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}
