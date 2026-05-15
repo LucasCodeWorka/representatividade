@@ -675,12 +675,18 @@ const produtoService = {
       `SELECT DISTINCT cd_produto FROM vr_tra_transitem WHERE dt_transacao >= $1`,
       [dataInicio]
     );
-    const vendidosArray = vendidosResult.rows.map(r => r.cd_produto);
+    const todosVendidos = vendidosResult.rows.map(r => r.cd_produto);
+    if (todosVendidos.length === 0) return { referencias: [], meses: [], corteYearMonth: dataCorteStr.slice(0, 7), dataCorte: dataCorteStr, totalReferencias: 0 };
+
+    // 1b. Aplica filtro EM LINHA (mesma regra da representatividade)
+    const classificados = await this.getProdutosClassificados(ano);
+    const classificadosSet = new Set(classificados.map(Number));
+    const vendidosArray = todosVendidos.filter(cd => classificadosSet.has(Number(cd)));
+
+    console.log(`[SUSPENSAO] ${todosVendidos.length} produtos com vendas → ${vendidosArray.length} após filtro EM LINHA`);
     if (vendidosArray.length === 0) return { referencias: [], meses: [], corteYearMonth: dataCorteStr.slice(0, 7), dataCorte: dataCorteStr, totalReferencias: 0 };
 
-    console.log(`[SUSPENSAO] ${vendidosArray.length} produtos com vendas`);
-
-    // 2. Detalhes de todos os vendidos (referência, grupo, suspenso)
+    // 2. Detalhes dos produtos classificados (referência, grupo, suspenso)
     const detalhesMap = await this.getDetalhesProdutos(vendidosArray);
 
     // 3. Referências que têm ao menos 1 SKU suspenso
